@@ -60,7 +60,7 @@ export function generateMarkdownReport(
       }
 
       lines.push(``);
-      lines.push(`> ${ann.comment}`);
+      lines.push(`> ${ann.comment.replace(/\n/g, "\n> ")}`);
       lines.push(``);
       lines.push(`---`);
       lines.push(``);

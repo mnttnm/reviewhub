@@ -35,7 +35,8 @@ export async function GET(
     (annotations ?? []) as Annotation[]
   );
 
-  const fileName = `review-${project.name.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.md`;
+  const safeName = project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const fileName = `review-${safeName}-${new Date().toISOString().slice(0, 10)}.md`;
 
   return new NextResponse(markdown, {
     status: 200,
