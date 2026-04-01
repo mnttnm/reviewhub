@@ -21,15 +21,30 @@ export async function POST(req: NextRequest) {
   }
 
   let slackThreadTs: string | null = null;
+  let slackError: string | null = null;
 
   // Create Slack thread if Slack is configured
   if (process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL_ID) {
     try {
       slackThreadTs = await createProjectThread(name, baseUrl);
     } catch (err) {
-      console.error("Failed to create Slack thread:", err);
-      // Continue without Slack — project still gets created
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to create Slack thread:", errMsg);
+      slackError = errMsg;
     }
+  } else {
+    slackError = "SLACK_BOT_TOKEN or SLACK_CHANNEL_ID not configured";
+  }
+
+  if (!slackThreadTs) {
+    return NextResponse.json(
+      {
+        error: "Failed to create Slack thread",
+        detail: slackError || "Unknown error",
+        hint: "Make sure the Slack bot is invited to the channel (type /invite @YourBotName in the channel)",
+      },
+      { status: 500 }
+    );
   }
 
   const project = createProject(name, baseUrl, slackThreadTs);
