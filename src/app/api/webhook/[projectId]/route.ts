@@ -6,6 +6,17 @@ import {
 } from "@/lib/slack";
 import { ReviewSubmission, WebhookEvent } from "@/lib/types";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+// OPTIONS /api/webhook/[projectId] — CORS preflight
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders });
+}
+
 /**
  * POST /api/webhook/[projectId]
  *
@@ -21,13 +32,13 @@ export async function POST(
 ) {
   const project = getProject(params.projectId);
   if (!project) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    return NextResponse.json({ error: "Project not found" }, { status: 404, headers: corsHeaders });
   }
 
   if (!project.slackThreadTs) {
     return NextResponse.json(
       { error: "Project has no Slack thread configured" },
-      { status: 400 }
+      { status: 400, headers: corsHeaders }
     );
   }
 
@@ -42,7 +53,7 @@ export async function POST(
 
   return NextResponse.json(
     { error: "Unrecognized payload format" },
-    { status: 400 }
+    { status: 400, headers: corsHeaders }
   );
 }
 
@@ -98,11 +109,14 @@ async function handleReviewSubmission(
     submission.annotations
   );
 
-  return NextResponse.json({
-    ok: true,
-    message: `Posted ${submission.annotations.length} annotations to Slack`,
-    markdown,
-  });
+  return NextResponse.json(
+    {
+      ok: true,
+      message: `Posted ${submission.annotations.length} annotations to Slack`,
+      markdown,
+    },
+    { headers: corsHeaders }
+  );
 }
 
 async function handleWebhookEvent(
@@ -112,10 +126,13 @@ async function handleWebhookEvent(
 ) {
   // Only handle submit events (batch of all annotations)
   if (event.event !== "submit" || !event.annotations) {
-    return NextResponse.json({
-      ok: true,
-      message: `Event ${event.event} acknowledged (only submit events are posted to Slack)`,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        message: `Event ${event.event} acknowledged (only submit events are posted to Slack)`,
+      },
+      { headers: corsHeaders }
+    );
   }
 
   await postReviewToSlack(
@@ -125,8 +142,11 @@ async function handleWebhookEvent(
     event.annotations
   );
 
-  return NextResponse.json({
-    ok: true,
-    message: `Posted ${event.annotations.length} annotations to Slack`,
-  });
+  return NextResponse.json(
+    {
+      ok: true,
+      message: `Posted ${event.annotations.length} annotations to Slack`,
+    },
+    { headers: corsHeaders }
+  );
 }
