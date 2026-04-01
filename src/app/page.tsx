@@ -3,10 +3,10 @@
 import { useState } from "react";
 
 interface Project {
-  id: string;
+  token: string;
   name: string;
   baseUrl: string;
-  slackThreadTs: string | null;
+  slackThreadTs: string;
   createdAt: string;
 }
 
@@ -16,20 +16,6 @@ export default function Home() {
   const [baseUrl, setBaseUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fetched, setFetched] = useState(false);
-
-  const fetchProjects = async () => {
-    try {
-      const res = await fetch("/api/projects");
-      if (res.ok) {
-        const data = await res.json();
-        setProjects(data);
-      }
-    } catch {
-      // ignore — projects list is optional
-    }
-    setFetched(true);
-  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,11 +33,13 @@ export default function Home() {
 
       if (!res.ok) {
         const data = await res.json();
-        setError(data.error || "Failed to create project");
+        const detail = data.detail ? ` (${data.detail})` : "";
+        const hint = data.hint ? `\n${data.hint}` : "";
+        setError(`${data.error || "Failed to create project"}${detail}${hint}`);
         return;
       }
 
-      const project = await res.json();
+      const project: Project = await res.json();
       setProjects((prev) => [project, ...prev]);
       setName("");
       setBaseUrl("");
@@ -61,11 +49,6 @@ export default function Home() {
       setLoading(false);
     }
   };
-
-  // Fetch projects on first render
-  if (!fetched) {
-    fetchProjects();
-  }
 
   return (
     <div className="min-h-screen p-8 sm:p-16 font-[family-name:var(--font-geist-sans)]">
@@ -107,7 +90,7 @@ export default function Home() {
               required
             />
             {error && (
-              <p className="text-red-500 text-sm">{error}</p>
+              <p className="text-red-500 text-sm whitespace-pre-line">{error}</p>
             )}
             <button
               type="submit"
@@ -125,7 +108,7 @@ export default function Home() {
             <h2 className="text-xl font-semibold mb-4">Projects</h2>
             <div className="space-y-4">
               {projects.map((project) => (
-                <ProjectCard key={project.id} project={project} />
+                <ProjectCard key={project.token} project={project} />
               ))}
             </div>
           </section>
@@ -168,8 +151,8 @@ function ProjectCard({ project }: { project: Project }) {
 
   const webhookUrl =
     typeof window !== "undefined"
-      ? `${window.location.origin}/api/webhook/${project.id}`
-      : `/api/webhook/${project.id}`;
+      ? `${window.location.origin}/api/webhook/${project.token}`
+      : `/api/webhook/${project.token}`;
 
   const snippet = `// Option A: Use Agentation's built-in webhookUrl
 import { Agentation } from "agentation";
@@ -193,14 +176,8 @@ import { Agentation } from "agentation";
           <h3 className="font-semibold">{project.name}</h3>
           <p className="text-sm text-neutral-500">{project.baseUrl}</p>
         </div>
-        <span
-          className={`text-xs px-2 py-1 rounded-full ${
-            project.slackThreadTs
-              ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-              : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
-          }`}
-        >
-          {project.slackThreadTs ? "Slack connected" : "No Slack thread"}
+        <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
+          Slack connected
         </span>
       </div>
 

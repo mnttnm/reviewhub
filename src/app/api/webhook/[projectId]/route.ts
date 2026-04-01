@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProject } from "@/lib/store";
+import { decodeProjectToken } from "@/lib/store";
 import {
   postReviewToSlack,
   generateMarkdownSummary,
@@ -20,6 +20,9 @@ export async function OPTIONS() {
 /**
  * POST /api/webhook/[projectId]
  *
+ * The projectId is a base64url-encoded token containing the Slack thread info.
+ * This is fully stateless — no server-side storage needed.
+ *
  * Accepts two payload formats:
  * 1. ReviewSubmission — from the ReviewCapture client component (includes screenshot)
  * 2. WebhookEvent — from Agentation's native webhook (submit event with annotations)
@@ -30,14 +33,10 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { projectId: string } }
 ) {
-  const project = getProject(params.projectId);
-  if (!project) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404, headers: corsHeaders });
-  }
-
-  if (!project.slackThreadTs) {
+  const token = decodeProjectToken(params.projectId);
+  if (!token) {
     return NextResponse.json(
-      { error: "Project has no Slack thread configured" },
+      { error: "Invalid project token" },
       { status: 400, headers: corsHeaders }
     );
   }
@@ -46,9 +45,9 @@ export async function POST(
 
   // Detect payload type
   if (isReviewSubmission(body)) {
-    return handleReviewSubmission(project.slackThreadTs, project.name, body);
+    return handleReviewSubmission(token.t, token.n, body);
   } else if (isWebhookEvent(body)) {
-    return handleWebhookEvent(project.slackThreadTs, project.name, body);
+    return handleWebhookEvent(token.t, token.n, body);
   }
 
   return NextResponse.json(

@@ -82,8 +82,15 @@ export async function createProjectThread(
   return result.ts;
 }
 
+const KIND_EMOJI: Record<string, string> = {
+  feedback: "\ud83d\udcac",
+  placement: "\ud83d\udcd0",
+  rearrange: "\ud83d\udd00",
+};
+
 /**
- * Format a single annotation into a readable Slack text line.
+ * Format a single annotation into a rich, readable Slack text block.
+ * Designed to be useful for both humans (visual context) and AI agents (structured selectors).
  */
 function formatAnnotationLine(index: number, ann: AgentationAnnotation): string {
   const severity = ann.severity
@@ -91,20 +98,69 @@ function formatAnnotationLine(index: number, ann: AgentationAnnotation): string 
     : "\u2b1c";
   const intent = ann.intent ? INTENT_LABEL[ann.intent] || ann.intent : "";
   const intentStr = intent ? ` *${intent}*` : "";
+  const kindEmoji = ann.kind ? KIND_EMOJI[ann.kind] || "" : "";
+  const kindStr = kindEmoji ? ` ${kindEmoji}` : "";
 
-  const comment = ann.comment.replace(/\n/g, " ").slice(0, 200);
+  const comment = ann.comment.replace(/\n/g, " ").slice(0, 300);
 
-  const parts: string[] = [`*#${index}* ${severity}${intentStr} \u2014 \u201c${comment}\u201d`];
+  const parts: string[] = [`*#${index}* ${severity}${intentStr}${kindStr} \u2014 \u201c${comment}\u201d`];
 
-  // Element identification — multiple fallback strategies
+  // What the user was looking at (human-friendly)
   if (ann.selectedText) {
-    parts.push(`    \ud83d\udcdd Text: \`${ann.selectedText.slice(0, 100)}\``);
+    parts.push(`\ud83d\udcdd *Selected text:* \u201c${ann.selectedText.slice(0, 120)}\u201d`);
   }
+  if (ann.nearbyText) {
+    parts.push(`\ud83d\udc41\ufe0f *Nearby text:* \u201c${ann.nearbyText.slice(0, 120)}\u201d`);
+  }
+
+  // Where in the UI (for developers and agents)
   if (ann.elementPath) {
-    parts.push(`    \ud83c\udfaf Selector: \`${ann.elementPath}\``);
+    parts.push(`\ud83c\udfaf *Selector:* \`${ann.elementPath}\``);
   }
   if (ann.reactComponents) {
-    parts.push(`    \u269b\ufe0f Component: \`${ann.reactComponents}\``);
+    parts.push(`\u269b\ufe0f *Component:* \`${ann.reactComponents}\``);
+  }
+  if (ann.element) {
+    const tag = ann.cssClasses
+      ? `<${ann.element} class="${ann.cssClasses.slice(0, 80)}">`
+      : `<${ann.element}>`;
+    parts.push(`\ud83c\udff7\ufe0f *Element:* \`${tag}\``);
+  }
+
+  // Visual properties (helps agents locate and fix)
+  if (ann.computedStyles) {
+    parts.push(`\ud83c\udfa8 *Styles:* \`${ann.computedStyles.slice(0, 150)}\``);
+  }
+  if (ann.accessibility) {
+    parts.push(`\u267f *Accessibility:* \`${ann.accessibility.slice(0, 100)}\``);
+  }
+
+  // Position info
+  const positionParts: string[] = [];
+  if (ann.x !== undefined) positionParts.push(`x: ${ann.x.toFixed(1)}%`);
+  if (ann.y !== undefined) positionParts.push(`y: ${ann.y}px`);
+  if (ann.boundingBox) {
+    const bb = ann.boundingBox;
+    positionParts.push(`box: ${bb.width}\u00d7${bb.height} at (${bb.x},${bb.y})`);
+  }
+  if (positionParts.length > 0) {
+    parts.push(`\ud83d\udccf *Position:* ${positionParts.join(" \u2022 ")}`);
+  }
+
+  // Layout mode specifics
+  if (ann.kind === "placement" && ann.placement) {
+    parts.push(`\ud83d\udcd0 *Place:* \`${ann.placement.componentType}\` (${ann.placement.width}\u00d7${ann.placement.height}px)`);
+    if (ann.placement.text) {
+      parts.push(`    Label: \u201c${ann.placement.text}\u201d`);
+    }
+  }
+  if (ann.kind === "rearrange" && ann.rearrange) {
+    parts.push(`\ud83d\udd00 *Rearrange:* \`${ann.rearrange.selector}\` (\u201c${ann.rearrange.label}\u201d)`);
+  }
+
+  // Page URL if present on annotation
+  if (ann.url) {
+    parts.push(`\ud83d\udcc4 *Page:* <${ann.url}|${ann.url}>`);
   }
 
   return parts.join("\n");
@@ -213,26 +269,63 @@ export function generateMarkdownSummary(
   annotations.forEach((ann, i) => {
     const severityBadge = ann.severity ? ` [${ann.severity}]` : "";
     const intentBadge = ann.intent ? ` — ${ann.intent}` : "";
+    const kindBadge = ann.kind && ann.kind !== "feedback" ? ` (${ann.kind})` : "";
 
-    lines.push(`## #${i + 1}${severityBadge}${intentBadge}`);
+    lines.push(`## #${i + 1}${severityBadge}${intentBadge}${kindBadge}`);
     lines.push(``);
 
+    // Human-readable context
     if (ann.selectedText) {
       lines.push(`**Selected Text:** "${ann.selectedText}"`);
     }
+    if (ann.nearbyText) {
+      lines.push(`**Nearby Text:** "${ann.nearbyText}"`);
+    }
+
+    // Technical identifiers
     if (ann.elementPath) {
       lines.push(`**Element:** \`${ann.elementPath}\``);
     }
     if (ann.reactComponents) {
-      lines.push(`**Component:** ${ann.reactComponents}`);
+      lines.push(`**Component:** \`${ann.reactComponents}\``);
     }
-    if (ann.cssClasses) {
-      lines.push(`**CSS Classes:** \`${ann.cssClasses}\``);
+    if (ann.element) {
+      const tag = ann.cssClasses ? `<${ann.element} class="${ann.cssClasses}">` : `<${ann.element}>`;
+      lines.push(`**Tag:** \`${tag}\``);
     }
+
+    // Visual properties
     if (ann.computedStyles) {
-      lines.push(`**Computed Styles:** ${ann.computedStyles}`);
+      lines.push(`**Styles:** \`${ann.computedStyles}\``);
     }
-    lines.push(`**Position:** (${ann.x}, ${ann.y})`);
+    if (ann.accessibility) {
+      lines.push(`**Accessibility:** \`${ann.accessibility}\``);
+    }
+
+    // Position
+    const posParts: string[] = [];
+    if (ann.x !== undefined) posParts.push(`x: ${ann.x.toFixed(1)}%`);
+    if (ann.y !== undefined) posParts.push(`y: ${ann.y}px`);
+    if (ann.boundingBox) {
+      const bb = ann.boundingBox;
+      posParts.push(`box: ${bb.width}x${bb.height} at (${bb.x},${bb.y})`);
+    }
+    if (posParts.length > 0) {
+      lines.push(`**Position:** ${posParts.join(" | ")}`);
+    }
+
+    // Layout mode
+    if (ann.kind === "placement" && ann.placement) {
+      lines.push(`**Place:** \`${ann.placement.componentType}\` (${ann.placement.width}x${ann.placement.height}px)`);
+    }
+    if (ann.kind === "rearrange" && ann.rearrange) {
+      lines.push(`**Rearrange:** \`${ann.rearrange.selector}\` ("${ann.rearrange.label}")`);
+    }
+
+    if (ann.url) {
+      lines.push(`**Page:** ${ann.url}`);
+    }
+
     lines.push(``);
     lines.push(`> ${ann.comment.replace(/\n/g, "\n> ")}`);
     lines.push(``);
