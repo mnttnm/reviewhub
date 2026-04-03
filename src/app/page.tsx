@@ -1,13 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface Project {
   token: string;
   name: string;
   baseUrl: string;
   slackThreadTs: string;
+  webhookUrl?: string;
   createdAt: string;
+}
+
+const STORAGE_KEY = "reviewhub-projects";
+
+function loadProjects(): Project[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveProjects(projects: Project[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+  } catch {
+    // localStorage full or unavailable — silent fail
+  }
 }
 
 export default function Home() {
@@ -16,6 +37,18 @@ export default function Home() {
   const [baseUrl, setBaseUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Load projects from localStorage on mount
+  useEffect(() => {
+    setProjects(loadProjects());
+  }, []);
+
+  // Save projects to localStorage whenever they change
+  useEffect(() => {
+    if (projects.length > 0) {
+      saveProjects(projects);
+    }
+  }, [projects]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();

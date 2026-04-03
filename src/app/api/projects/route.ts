@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { encodeProjectToken } from "@/lib/store";
-import { createProjectThread } from "@/lib/slack";
+import { createProjectThread, postWebhookInfo } from "@/lib/slack";
 
 /**
  * POST /api/projects — create a new project + Slack thread.
@@ -44,7 +44,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Encode the token and build the webhook URL
   const token = encodeProjectToken(slackThreadTs, name);
+  const host = req.headers.get("host") || "reviewhub-weld.vercel.app";
+  const protocol = host.startsWith("localhost") ? "http" : "https";
+  const webhookUrl = `${protocol}://${host}/api/webhook/${token}`;
+
+  // Post webhook URL as first reply in the thread for easy reference
+  try {
+    await postWebhookInfo(slackThreadTs, webhookUrl);
+  } catch {
+    // Non-critical — webhook URL is also returned to the UI
+  }
 
   return NextResponse.json(
     {
@@ -52,6 +63,7 @@ export async function POST(req: NextRequest) {
       name,
       baseUrl,
       slackThreadTs,
+      webhookUrl,
       createdAt: new Date().toISOString(),
     },
     { status: 201 }

@@ -60,7 +60,7 @@ export async function createProjectThread(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*URL:* <${baseUrl}|${baseUrl}>\n*Created:* ${new Date().toISOString().slice(0, 10)}`,
+          text: `*Prototype URL:* <${baseUrl}|${baseUrl}>\n*Created:* ${new Date().toISOString().slice(0, 10)}`,
         },
       },
       {
@@ -68,7 +68,7 @@ export async function createProjectThread(
         elements: [
           {
             type: "mrkdwn",
-            text: "Review submissions from Agentation will appear in this thread.",
+            text: "Review submissions from Agentation will appear as replies in this thread.",
           },
         ],
       },
@@ -76,10 +76,43 @@ export async function createProjectThread(
   });
 
   if (!result.ts) {
-    throw new Error("Failed to create Slack thread — no timestamp returned");
+    throw new Error("Failed to create Slack thread \u2014 no timestamp returned");
   }
 
   return result.ts;
+}
+
+/**
+ * Post the webhook URL as a reply in the project thread for easy reference.
+ */
+export async function postWebhookInfo(
+  threadTs: string,
+  webhookUrl: string
+): Promise<void> {
+  const slack = getSlackClient();
+  const channelId = getChannelId();
+
+  await slack.chat.postMessage({
+    channel: channelId,
+    thread_ts: threadTs,
+    text: `Webhook URL: ${webhookUrl}`,
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Webhook URL (save this):*\n\`${webhookUrl}\``,
+        },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*Add to your prototype:*\n\`\`\`import { Agentation } from "agentation";\n\n<Agentation webhookUrl="${webhookUrl}" />\`\`\``,
+        },
+      },
+    ],
+  });
 }
 
 const KIND_EMOJI: Record<string, string> = {
