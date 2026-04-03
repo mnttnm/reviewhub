@@ -123,28 +123,58 @@ async function handleWebhookEvent(
   projectName: string,
   event: WebhookEvent
 ) {
-  // Only handle submit events (batch of all annotations)
-  if (event.event !== "submit" || !event.annotations) {
+  // Handle "submit" — batch of all annotations (from manual Send button)
+  if (event.event === "submit" && event.annotations) {
+    await postReviewToSlack(
+      threadTs,
+      projectName,
+      event.url,
+      event.annotations
+    );
+
     return NextResponse.json(
       {
         ok: true,
-        message: `Event ${event.event} acknowledged (only submit events are posted to Slack)`,
+        message: `Posted ${event.annotations.length} annotations to Slack`,
       },
       { headers: corsHeaders }
     );
   }
 
-  await postReviewToSlack(
-    threadTs,
-    projectName,
-    event.url,
-    event.annotations
-  );
+  // Handle individual annotation events from auto-send
+  // (annotation.add, annotation.update, annotation.delete)
+  if (event.annotation) {
+    const annotations = [event.annotation];
 
+    if (event.event === "annotation.delete") {
+      return NextResponse.json(
+        { ok: true, message: `Annotation deleted — acknowledged` },
+        { headers: corsHeaders }
+      );
+    }
+
+    await postReviewToSlack(
+      threadTs,
+      projectName,
+      event.url,
+      annotations
+    );
+
+    const label = event.event === "annotation.update" ? "Updated" : "New";
+    return NextResponse.json(
+      {
+        ok: true,
+        message: `${label} annotation posted to Slack`,
+      },
+      { headers: corsHeaders }
+    );
+  }
+
+  // Acknowledge unknown events silently
   return NextResponse.json(
     {
       ok: true,
-      message: `Posted ${event.annotations.length} annotations to Slack`,
+      message: `Event ${event.event} acknowledged`,
     },
     { headers: corsHeaders }
   );
