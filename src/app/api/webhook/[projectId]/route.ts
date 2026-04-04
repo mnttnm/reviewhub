@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { decodeProjectToken } from "@/lib/store";
 import {
   postReviewToSlack,
+  uploadScreenshotToSlack,
   generateMarkdownSummary,
 } from "@/lib/slack";
 import {
@@ -190,21 +191,8 @@ async function handleReviewSubmission(
     }
   }
 
-  const newAnnotations = submission.annotations.filter(
-    (ann) => !isDuplicate(threadTs, ann.id)
-  );
-
-  if (newAnnotations.length === 0) {
-    return NextResponse.json(
-      {
-        ok: true,
-        message: `All ${submission.annotations.length} annotations already posted (deduplicated)`,
-        skipped: submission.annotations.length,
-      },
-      { headers: corsHeaders }
-    );
-  }
-
+  // Decode screenshot BEFORE dedup check so it is available regardless of
+  // whether annotations are new or already posted.
   let screenshotBuffer: Buffer | undefined;
   if (submission.screenshot) {
     try {
@@ -216,6 +204,41 @@ async function handleReviewSubmission(
     } catch (err) {
       console.error("Failed to decode screenshot:", err);
     }
+  }
+
+  const newAnnotations = submission.annotations.filter(
+    (ann) => !isDuplicate(threadTs, ann.id)
+  );
+
+  if (newAnnotations.length === 0) {
+    // All annotations already posted, but still upload the screenshot if one
+    // was provided (the typical case when Agentation fires real-time
+    // annotation.add events before ReviewCapture sends the final submission
+    // with the screenshot attached).
+    if (screenshotBuffer && screenshotBuffer.length > 0) {
+      try {
+        await uploadScreenshotToSlack(
+          threadTs,
+          submission.url,
+          submission.annotations.length,
+          screenshotBuffer
+        );
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error("[Webhook] Screenshot upload failed:", errMsg);
+      }
+    }
+
+    return NextResponse.json(
+      {
+        ok: true,
+        message: `All ${submission.annotations.length} annotations already posted (deduplicated)${
+          screenshotBuffer ? " — screenshot uploaded" : ""
+        }`,
+        skipped: submission.annotations.length,
+      },
+      { headers: corsHeaders }
+    );
   }
 
   try {
@@ -270,16 +293,48 @@ async function handleWebhookEvent(
     );
   }
 
+  // Decode screenshot if the event carries one (e.g. submit with screenshot
+  // attached by ReviewCapture or a similar client).
+  let screenshotBuffer: Buffer | undefined;
+  if (event.screenshot) {
+    try {
+      const base64Data = event.screenshot.replace(
+        /^data:image\/\w+;base64,/,
+        ""
+      );
+      screenshotBuffer = Buffer.from(base64Data, "base64");
+    } catch (err) {
+      console.error("Failed to decode event screenshot:", err);
+    }
+  }
+
   if (event.event === "submit" && event.annotations) {
     const newAnnotations = event.annotations.filter(
       (ann: AgentationAnnotation) => !isDuplicate(threadTs, ann.id)
     );
 
     if (newAnnotations.length === 0) {
+      // Still upload screenshot even when annotations are deduped
+      if (screenshotBuffer && screenshotBuffer.length > 0) {
+        try {
+          await uploadScreenshotToSlack(
+            threadTs,
+            event.url,
+            event.annotations.length,
+            screenshotBuffer
+          );
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.error("[Webhook] Screenshot upload failed:", errMsg);
+        }
+      }
+
       return NextResponse.json(
         {
           ok: true,
-          message: `All ${event.annotations.length} annotations already posted (deduplicated)`,
+          message: `All ${event.annotations.length} annotations already posted (deduplicated)${
+            screenshotBuffer ? " — screenshot uploaded" : ""
+          }`,
           skipped: event.annotations.length,
         },
         { headers: corsHeaders }
@@ -287,7 +342,13 @@ async function handleWebhookEvent(
     }
 
     try {
-      await postReviewToSlack(threadTs, projectName, event.url, newAnnotations);
+      await postReviewToSlack(
+        threadTs,
+        projectName,
+        event.url,
+        newAnnotations,
+        screenshotBuffer
+      );
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[Webhook] Slack post failed:", errMsg);
@@ -337,7 +398,13 @@ async function handleWebhookEvent(
     }
 
     try {
-      await postReviewToSlack(threadTs, projectName, event.url, [event.annotation]);
+      await postReviewToSlack(
+        threadTs,
+        projectName,
+        event.url,
+        [event.annotation],
+        screenshotBuffer
+      );
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[Webhook] Slack post failed:", errMsg);
