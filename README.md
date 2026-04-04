@@ -1,36 +1,169 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ReviewHub
 
-## Getting Started
+Capture UI review annotations from [Agentation](https://www.agentation.com/) and post them to Slack — with screenshots.
 
-First, run the development server:
+ReviewHub is a lightweight Next.js app that acts as a bridge between the Agentation review widget (embedded in your prototype) and a Slack channel. When a reviewer annotates your UI, ReviewHub posts the annotations and a full-page screenshot to a dedicated Slack thread.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## How It Works
+
+```
+┌─────────────────┐      webhook POST       ┌─────────────┐     Slack API     ┌───────┐
+│  Your Prototype  │  ──────────────────────► │  ReviewHub  │  ──────────────►  │ Slack │
+│  + Agentation    │   annotations + screenshot │ (Vercel)  │  thread replies   │       │
+└─────────────────┘                          └─────────────┘                   └───────┘
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. **Create a project** on the ReviewHub dashboard — this creates a Slack thread and gives you a webhook URL.
+2. **Add Agentation** to your prototype with the webhook URL.
+3. **Reviewers annotate** the live UI. Each annotation is posted to Slack in real time.
+4. **On submit**, a full-page screenshot + all annotations are posted to the Slack thread.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Stateless Architecture
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+ReviewHub encodes Slack thread info (thread timestamp + project name) directly into the webhook URL as a base64url token. No database or server-side storage is needed — Slack is the single source of truth, and webhook URLs survive redeployments.
 
-## Learn More
+## Project Structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/
+├── app/
+│   ├── page.tsx                          # Dashboard UI (create projects, copy webhook URLs)
+│   ├── api/
+│   │   ├── projects/route.ts             # POST /api/projects — create project + Slack thread
+│   │   └── webhook/[projectId]/route.ts  # POST /api/webhook/:token — receive annotations
+├── components/
+│   └── review-capture.tsx                # Client component for screenshot capture (copy into prototype)
+└── lib/
+    ├── slack.ts                          # Slack API helpers (post messages, upload screenshots)
+    ├── store.ts                          # Stateless token encode/decode
+    └── types.ts                          # TypeScript types (annotations, events, tokens)
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Setup
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Prerequisites
 
-## Deploy on Vercel
+- Node.js 18+
+- pnpm (or npm/yarn)
+- A Slack workspace with a bot token
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 1. Install dependencies
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+pnpm install
+```
+
+### 2. Configure environment variables
+
+Create a `.env.local` file:
+
+```env
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_CHANNEL_ID=C0123456789
+```
+
+**Slack bot scopes needed:** `chat:write`, `files:write` (for screenshot uploads).
+
+Make sure to invite the bot to your channel: type `/invite @YourBotName` in the Slack channel.
+
+### 3. Run locally
+
+```bash
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) to create a project and get your webhook URL.
+
+## Integrating with Your Prototype
+
+### Option A: Agentation webhook only (no screenshots)
+
+```tsx
+import { Agentation } from "agentation";
+
+<Agentation webhookUrl="https://reviewhub-weld.vercel.app/api/webhook/YOUR_TOKEN" />
+```
+
+### Option B: With screenshot capture (recommended)
+
+```bash
+npm install modern-screenshot
+```
+
+Copy `src/components/review-capture.tsx` into your prototype, then:
+
+```tsx
+import { useRef } from "react";
+import { Agentation } from "agentation";
+import ReviewCapture from "./review-capture";
+
+function App() {
+  const captureRef = useRef<{ submit: (annotations: any[]) => void }>(null);
+  return (
+    <>
+      <ReviewCapture
+        ref={captureRef}
+        webhookUrl="https://reviewhub-weld.vercel.app/api/webhook/YOUR_TOKEN"
+      />
+      <Agentation
+        onSubmit={(output, annotations) => captureRef.current?.submit(annotations)}
+      />
+    </>
+  );
+}
+```
+
+## Webhook API
+
+### `POST /api/webhook/:token`
+
+Accepts two payload formats:
+
+**ReviewSubmission** (from ReviewCapture — includes screenshot):
+```json
+{
+  "url": "https://my-app.vercel.app/page",
+  "annotations": [{ "id": "...", "comment": "...", ... }],
+  "screenshot": "data:image/jpeg;base64,..."
+}
+```
+
+**WebhookEvent** (from Agentation — real-time events):
+```json
+{
+  "event": "annotation.add",
+  "timestamp": 1234567890,
+  "url": "https://my-app.vercel.app/page",
+  "annotation": { "id": "...", "comment": "...", ... }
+}
+```
+
+Supported events: `annotation.add`, `annotation.update`, `annotation.delete`, `annotations.clear`, `submit`.
+
+### `GET /api/webhook/:token`
+
+Health check — returns project info and accepted events.
+
+### `POST /api/projects`
+
+Create a new project. Body: `{ "name": "My App", "baseUrl": "https://my-app.vercel.app" }`.
+
+## Deploy
+
+Deploy to Vercel with the same environment variables:
+
+```bash
+# Using Vercel CLI
+vercel --prod
+
+# Or connect the GitHub repo in the Vercel dashboard
+```
+
+Set `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID` in your Vercel project's environment variables (Settings → Environment Variables).
+
+## Key Design Decisions
+
+- **No database** — project tokens are self-contained (base64url-encoded JSON with Slack thread timestamp + project name).
+- **Annotation dedup** — in-memory best-effort deduplication prevents double-posting when Agentation real-time events race with the ReviewCapture submit. On serverless, this is per-instance only.
+- **Screenshot as JPEG** — compressed at 85% quality for smaller payloads. Uploaded to Slack via `files.uploadV2`.
+- **CORS enabled** — the webhook accepts cross-origin requests so prototypes on any domain can POST to it.
