@@ -55,6 +55,10 @@ function markPosted(threadTs: string, annotationId: string): void {
   recentAnnotations.set(key, { expiresAt: Date.now() + DEDUP_TTL_MS });
 }
 
+function removePosted(threadTs: string, annotationId: string): void {
+  recentAnnotations.delete(dedupKey(threadTs, annotationId));
+}
+
 let cleanupCounter = 0;
 function maybeCleanup(): void {
   cleanupCounter++;
@@ -222,6 +226,7 @@ async function handleReviewSubmission(
     // was provided (the typical case when Agentation fires real-time
     // annotation.add events before ReviewCapture sends the final submission
     // with the screenshot attached).
+    let screenshotUploaded = false;
     if (screenshotBuffer && screenshotBuffer.length > 0) {
       try {
         await uploadScreenshotToSlack(
@@ -230,6 +235,7 @@ async function handleReviewSubmission(
           submission.annotations.length,
           screenshotBuffer
         );
+        screenshotUploaded = true;
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         console.error("[Webhook] Screenshot upload failed:", errMsg);
@@ -240,7 +246,7 @@ async function handleReviewSubmission(
       {
         ok: true,
         message: `All ${submission.annotations.length} annotations already posted (deduplicated)${
-          screenshotBuffer ? " — screenshot uploaded" : ""
+          screenshotUploaded ? " — screenshot uploaded" : ""
         }`,
         skipped: submission.annotations.length,
       },
@@ -251,7 +257,8 @@ async function handleReviewSubmission(
   // Mark annotations as posted BEFORE the async Slack call so that concurrent
   // requests (e.g. Agentation real-time events racing with ReviewCapture
   // submit) see the dedup entry immediately rather than after the slow
-  // network round-trip.
+  // network round-trip. If the Slack call fails, we remove the entries so
+  // the client can retry.
   for (const ann of newAnnotations) {
     markPosted(threadTs, ann.id);
   }
@@ -265,6 +272,9 @@ async function handleReviewSubmission(
       screenshotBuffer
     );
   } catch (err) {
+    for (const ann of newAnnotations) {
+      removePosted(threadTs, ann.id);
+    }
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error("[Webhook] Slack post failed:", errMsg);
     return NextResponse.json(
@@ -326,6 +336,7 @@ async function handleWebhookEvent(
 
     if (newAnnotations.length === 0) {
       // Still upload screenshot even when annotations are deduped
+      let screenshotUploaded = false;
       if (screenshotBuffer && screenshotBuffer.length > 0) {
         try {
           await uploadScreenshotToSlack(
@@ -334,6 +345,7 @@ async function handleWebhookEvent(
             event.annotations.length,
             screenshotBuffer
           );
+          screenshotUploaded = true;
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
           console.error("[Webhook] Screenshot upload failed:", errMsg);
@@ -344,7 +356,7 @@ async function handleWebhookEvent(
         {
           ok: true,
           message: `All ${event.annotations.length} annotations already posted (deduplicated)${
-            screenshotBuffer ? " — screenshot uploaded" : ""
+            screenshotUploaded ? " — screenshot uploaded" : ""
           }`,
           skipped: event.annotations.length,
         },
@@ -365,6 +377,9 @@ async function handleWebhookEvent(
         screenshotBuffer
       );
     } catch (err) {
+      for (const ann of newAnnotations) {
+        removePosted(threadTs, ann.id);
+      }
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[Webhook] Slack post failed:", errMsg);
       return NextResponse.json(
@@ -419,6 +434,7 @@ async function handleWebhookEvent(
         screenshotBuffer
       );
     } catch (err) {
+      removePosted(threadTs, event.annotation.id);
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[Webhook] Slack post failed:", errMsg);
       return NextResponse.json(
