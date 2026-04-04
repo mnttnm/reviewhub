@@ -260,7 +260,7 @@ export async function postReviewToSlack(
           channel_id: channelId,
           thread_ts: threadTs,
           file: screenshotBuffer,
-          filename: `review-${Date.now()}.png`,
+          filename: `review-${Date.now()}.jpg`,
           title: `Screenshot — ${pageUrl}`,
           initial_comment: `\ud83d\uddbc\ufe0f *Review submission* for <${pageUrl}|${pageUrl}>\n${annotations.length} annotation${annotations.length === 1 ? "" : "s"}`,
         })

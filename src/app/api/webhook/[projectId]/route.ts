@@ -161,7 +161,8 @@ function isReviewSubmission(body: unknown): body is ReviewSubmission {
     typeof body === "object" &&
     body !== null &&
     "annotations" in body &&
-    Array.isArray((body as ReviewSubmission).annotations)
+    Array.isArray((body as ReviewSubmission).annotations) &&
+    !("event" in body)
   );
 }
 
@@ -328,7 +329,7 @@ async function handleWebhookEvent(
       );
     }
 
-    if (isDuplicate(threadTs, event.annotation.id)) {
+    if (event.event !== "annotation.update" && isDuplicate(threadTs, event.annotation.id)) {
       return NextResponse.json(
         { ok: true, message: `Annotation ${event.annotation.id} already posted (deduplicated)` },
         { headers: corsHeaders }
