@@ -193,7 +193,7 @@ import { Agentation } from "agentation";
 <Agentation webhookUrl="${webhookUrl}" />
 
 // Option B: Use ReviewCapture for screenshot support
-// (requires html2canvas: npm install html2canvas)
+// (requires modern-screenshot: npm install modern-screenshot)
 // See ReviewCapture component in the repo for details.`;
 
   const handleCopy = async () => {
