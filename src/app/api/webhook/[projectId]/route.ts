@@ -21,6 +21,13 @@ const corsHeaders = {
 // ---------------------------------------------------------------------------
 // Annotation deduplication
 // ---------------------------------------------------------------------------
+// NOTE: This is an in-memory, best-effort dedup. On serverless platforms like
+// Vercel each instance has its own Map, so dedup only works for concurrent
+// requests that happen to land on the same warm instance.  For guaranteed
+// exactly-once delivery, an external store (e.g. Vercel KV / Redis) would be
+// needed — but for the common case (rapid resubmission, Agentation real-time
+// events racing with ReviewCapture submit) same-instance dedup is sufficient.
+// ---------------------------------------------------------------------------
 
 const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -241,6 +248,14 @@ async function handleReviewSubmission(
     );
   }
 
+  // Mark annotations as posted BEFORE the async Slack call so that concurrent
+  // requests (e.g. Agentation real-time events racing with ReviewCapture
+  // submit) see the dedup entry immediately rather than after the slow
+  // network round-trip.
+  for (const ann of newAnnotations) {
+    markPosted(threadTs, ann.id);
+  }
+
   try {
     await postReviewToSlack(
       threadTs,
@@ -256,10 +271,6 @@ async function handleReviewSubmission(
       { ok: false, error: "Failed to post to Slack", detail: errMsg },
       { status: 502, headers: corsHeaders }
     );
-  }
-
-  for (const ann of newAnnotations) {
-    markPosted(threadTs, ann.id);
   }
 
   const markdown = generateMarkdownSummary(
@@ -341,6 +352,10 @@ async function handleWebhookEvent(
       );
     }
 
+    for (const ann of newAnnotations) {
+      markPosted(threadTs, ann.id);
+    }
+
     try {
       await postReviewToSlack(
         threadTs,
@@ -356,10 +371,6 @@ async function handleWebhookEvent(
         { ok: false, error: "Failed to post to Slack", detail: errMsg },
         { status: 502, headers: corsHeaders }
       );
-    }
-
-    for (const ann of newAnnotations) {
-      markPosted(threadTs, ann.id);
     }
 
     const skipped = event.annotations.length - newAnnotations.length;
@@ -397,6 +408,8 @@ async function handleWebhookEvent(
       );
     }
 
+    markPosted(threadTs, event.annotation.id);
+
     try {
       await postReviewToSlack(
         threadTs,
@@ -413,8 +426,6 @@ async function handleWebhookEvent(
         { status: 502, headers: corsHeaders }
       );
     }
-
-    markPosted(threadTs, event.annotation.id);
 
     const label = event.event === "annotation.update" ? "Updated" : "New";
     return NextResponse.json(
