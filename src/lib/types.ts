@@ -83,6 +83,7 @@ export interface WebhookEvent {
   url: string;
   annotation?: AgentationAnnotation;
   annotations?: AgentationAnnotation[];
+  screenshot?: string; // base64 data URL (attached by ReviewCapture)
 }
 
 /**

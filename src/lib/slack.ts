@@ -240,6 +240,32 @@ function formatAnnotationLine(index: number, ann: AgentationAnnotation): string 
 }
 
 /**
+ * Upload a screenshot to a Slack thread. Extracted so it can be called
+ * independently of annotation posting (e.g. when all annotations are
+ * deduplicated but a new screenshot is still attached).
+ */
+export async function uploadScreenshotToSlack(
+  threadTs: string,
+  pageUrl: string,
+  annotationCount: number,
+  screenshotBuffer: Buffer
+): Promise<void> {
+  const slack = getSlackClient();
+  const channelId = getChannelId();
+
+  await withRetry(() =>
+    slack.filesUploadV2({
+      channel_id: channelId,
+      thread_ts: threadTs,
+      file: screenshotBuffer,
+      filename: `review-${Date.now()}.jpg`,
+      title: `Screenshot — ${pageUrl}`,
+      initial_comment: `\ud83d\uddbc\ufe0f *Review submission* for <${pageUrl}|${pageUrl}>\n${annotationCount} annotation${annotationCount === 1 ? "" : "s"}`,
+    })
+  );
+}
+
+/**
  * Post a review submission (screenshot + annotations) to a Slack thread.
  */
 export async function postReviewToSlack(
@@ -255,15 +281,11 @@ export async function postReviewToSlack(
   // Upload screenshot if provided
   if (screenshotBuffer && screenshotBuffer.length > 0) {
     try {
-      await withRetry(() =>
-        slack.filesUploadV2({
-          channel_id: channelId,
-          thread_ts: threadTs,
-          file: screenshotBuffer,
-          filename: `review-${Date.now()}.jpg`,
-          title: `Screenshot — ${pageUrl}`,
-          initial_comment: `\ud83d\uddbc\ufe0f *Review submission* for <${pageUrl}|${pageUrl}>\n${annotations.length} annotation${annotations.length === 1 ? "" : "s"}`,
-        })
+      await uploadScreenshotToSlack(
+        threadTs,
+        pageUrl,
+        annotations.length,
+        screenshotBuffer
       );
     } catch (err) {
       console.error("Failed to upload screenshot to Slack:", err);

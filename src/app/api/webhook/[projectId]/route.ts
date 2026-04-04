@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { decodeProjectToken } from "@/lib/store";
 import {
   postReviewToSlack,
+  uploadScreenshotToSlack,
   generateMarkdownSummary,
 } from "@/lib/slack";
 import {
@@ -19,6 +20,13 @@ const corsHeaders = {
 
 // ---------------------------------------------------------------------------
 // Annotation deduplication
+// ---------------------------------------------------------------------------
+// NOTE: This is an in-memory, best-effort dedup. On serverless platforms like
+// Vercel each instance has its own Map, so dedup only works for concurrent
+// requests that happen to land on the same warm instance.  For guaranteed
+// exactly-once delivery, an external store (e.g. Vercel KV / Redis) would be
+// needed — but for the common case (rapid resubmission, Agentation real-time
+// events racing with ReviewCapture submit) same-instance dedup is sufficient.
 // ---------------------------------------------------------------------------
 
 const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -45,6 +53,10 @@ function isDuplicate(threadTs: string, annotationId: string): boolean {
 function markPosted(threadTs: string, annotationId: string): void {
   const key = dedupKey(threadTs, annotationId);
   recentAnnotations.set(key, { expiresAt: Date.now() + DEDUP_TTL_MS });
+}
+
+function removePosted(threadTs: string, annotationId: string): void {
+  recentAnnotations.delete(dedupKey(threadTs, annotationId));
 }
 
 let cleanupCounter = 0;
@@ -190,21 +202,8 @@ async function handleReviewSubmission(
     }
   }
 
-  const newAnnotations = submission.annotations.filter(
-    (ann) => !isDuplicate(threadTs, ann.id)
-  );
-
-  if (newAnnotations.length === 0) {
-    return NextResponse.json(
-      {
-        ok: true,
-        message: `All ${submission.annotations.length} annotations already posted (deduplicated)`,
-        skipped: submission.annotations.length,
-      },
-      { headers: corsHeaders }
-    );
-  }
-
+  // Decode screenshot BEFORE dedup check so it is available regardless of
+  // whether annotations are new or already posted.
   let screenshotBuffer: Buffer | undefined;
   if (submission.screenshot) {
     try {
@@ -218,6 +217,52 @@ async function handleReviewSubmission(
     }
   }
 
+  const newAnnotations = submission.annotations.filter(
+    (ann) => !isDuplicate(threadTs, ann.id)
+  );
+
+  if (newAnnotations.length === 0) {
+    // All annotations already posted, but still upload the screenshot if one
+    // was provided (the typical case when Agentation fires real-time
+    // annotation.add events before ReviewCapture sends the final submission
+    // with the screenshot attached).
+    let screenshotUploaded = false;
+    if (screenshotBuffer && screenshotBuffer.length > 0) {
+      try {
+        await uploadScreenshotToSlack(
+          threadTs,
+          submission.url,
+          submission.annotations.length,
+          screenshotBuffer
+        );
+        screenshotUploaded = true;
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error("[Webhook] Screenshot upload failed:", errMsg);
+      }
+    }
+
+    return NextResponse.json(
+      {
+        ok: true,
+        message: `All ${submission.annotations.length} annotations already posted (deduplicated)${
+          screenshotUploaded ? " — screenshot uploaded" : ""
+        }`,
+        skipped: submission.annotations.length,
+      },
+      { headers: corsHeaders }
+    );
+  }
+
+  // Mark annotations as posted BEFORE the async Slack call so that concurrent
+  // requests (e.g. Agentation real-time events racing with ReviewCapture
+  // submit) see the dedup entry immediately rather than after the slow
+  // network round-trip. If the Slack call fails, we remove the entries so
+  // the client can retry.
+  for (const ann of newAnnotations) {
+    markPosted(threadTs, ann.id);
+  }
+
   try {
     await postReviewToSlack(
       threadTs,
@@ -227,16 +272,15 @@ async function handleReviewSubmission(
       screenshotBuffer
     );
   } catch (err) {
+    for (const ann of newAnnotations) {
+      removePosted(threadTs, ann.id);
+    }
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error("[Webhook] Slack post failed:", errMsg);
     return NextResponse.json(
       { ok: false, error: "Failed to post to Slack", detail: errMsg },
       { status: 502, headers: corsHeaders }
     );
-  }
-
-  for (const ann of newAnnotations) {
-    markPosted(threadTs, ann.id);
   }
 
   const markdown = generateMarkdownSummary(
@@ -270,35 +314,78 @@ async function handleWebhookEvent(
     );
   }
 
+  // Decode screenshot if the event carries one (e.g. submit with screenshot
+  // attached by ReviewCapture or a similar client).
+  let screenshotBuffer: Buffer | undefined;
+  if (event.screenshot) {
+    try {
+      const base64Data = event.screenshot.replace(
+        /^data:image\/\w+;base64,/,
+        ""
+      );
+      screenshotBuffer = Buffer.from(base64Data, "base64");
+    } catch (err) {
+      console.error("Failed to decode event screenshot:", err);
+    }
+  }
+
   if (event.event === "submit" && event.annotations) {
     const newAnnotations = event.annotations.filter(
       (ann: AgentationAnnotation) => !isDuplicate(threadTs, ann.id)
     );
 
     if (newAnnotations.length === 0) {
+      // Still upload screenshot even when annotations are deduped
+      let screenshotUploaded = false;
+      if (screenshotBuffer && screenshotBuffer.length > 0) {
+        try {
+          await uploadScreenshotToSlack(
+            threadTs,
+            event.url,
+            event.annotations.length,
+            screenshotBuffer
+          );
+          screenshotUploaded = true;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.error("[Webhook] Screenshot upload failed:", errMsg);
+        }
+      }
+
       return NextResponse.json(
         {
           ok: true,
-          message: `All ${event.annotations.length} annotations already posted (deduplicated)`,
+          message: `All ${event.annotations.length} annotations already posted (deduplicated)${
+            screenshotUploaded ? " — screenshot uploaded" : ""
+          }`,
           skipped: event.annotations.length,
         },
         { headers: corsHeaders }
       );
     }
 
+    for (const ann of newAnnotations) {
+      markPosted(threadTs, ann.id);
+    }
+
     try {
-      await postReviewToSlack(threadTs, projectName, event.url, newAnnotations);
+      await postReviewToSlack(
+        threadTs,
+        projectName,
+        event.url,
+        newAnnotations,
+        screenshotBuffer
+      );
     } catch (err) {
+      for (const ann of newAnnotations) {
+        removePosted(threadTs, ann.id);
+      }
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[Webhook] Slack post failed:", errMsg);
       return NextResponse.json(
         { ok: false, error: "Failed to post to Slack", detail: errMsg },
         { status: 502, headers: corsHeaders }
       );
-    }
-
-    for (const ann of newAnnotations) {
-      markPosted(threadTs, ann.id);
     }
 
     const skipped = event.annotations.length - newAnnotations.length;
@@ -336,9 +423,18 @@ async function handleWebhookEvent(
       );
     }
 
+    markPosted(threadTs, event.annotation.id);
+
     try {
-      await postReviewToSlack(threadTs, projectName, event.url, [event.annotation]);
+      await postReviewToSlack(
+        threadTs,
+        projectName,
+        event.url,
+        [event.annotation],
+        screenshotBuffer
+      );
     } catch (err) {
+      removePosted(threadTs, event.annotation.id);
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[Webhook] Slack post failed:", errMsg);
       return NextResponse.json(
@@ -346,8 +442,6 @@ async function handleWebhookEvent(
         { status: 502, headers: corsHeaders }
       );
     }
-
-    markPosted(threadTs, event.annotation.id);
 
     const label = event.event === "annotation.update" ? "Updated" : "New";
     return NextResponse.json(
