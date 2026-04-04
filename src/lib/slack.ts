@@ -21,6 +21,42 @@ function getChannelId(): string {
   return channelId;
 }
 
+/**
+ * Retry a function with exponential backoff.
+ * Retries up to `maxAttempts` times with delays of 1s, 2s, 4s.
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts = 3
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const isRateLimit =
+        err instanceof Error && err.message.includes("rate_limited");
+      const isTransient =
+        err instanceof Error &&
+        (err.message.includes("ETIMEDOUT") ||
+          err.message.includes("ECONNRESET") ||
+          err.message.includes("service_unavailable"));
+
+      if (attempt < maxAttempts && (isRateLimit || isTransient)) {
+        const delay = Math.pow(2, attempt - 1) * 1000;
+        console.warn(
+          `[Slack] Attempt ${attempt}/${maxAttempts} failed (${isRateLimit ? "rate_limited" : "transient"}), retrying in ${delay}ms`
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
 const SEVERITY_EMOJI: Record<string, string> = {
   blocking: "\ud83d\udd34",
   important: "\ud83d\udfe1",
@@ -44,36 +80,38 @@ export async function createProjectThread(
   const slack = getSlackClient();
   const channelId = getChannelId();
 
-  const result = await slack.chat.postMessage({
-    channel: channelId,
-    text: `New review project: ${projectName}`,
-    blocks: [
-      {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: `\ud83d\udccb ${projectName}`,
-          emoji: true,
-        },
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*Prototype URL:* <${baseUrl}|${baseUrl}>\n*Created:* ${new Date().toISOString().slice(0, 10)}`,
-        },
-      },
-      {
-        type: "context",
-        elements: [
-          {
-            type: "mrkdwn",
-            text: "Review submissions from Agentation will appear as replies in this thread.",
+  const result = await withRetry(() =>
+    slack.chat.postMessage({
+      channel: channelId,
+      text: `New review project: ${projectName}`,
+      blocks: [
+        {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: `\ud83d\udccb ${projectName}`,
+            emoji: true,
           },
-        ],
-      },
-    ],
-  });
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Prototype URL:* <${baseUrl}|${baseUrl}>\n*Created:* ${new Date().toISOString().slice(0, 10)}`,
+          },
+        },
+        {
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: "Review submissions from Agentation will appear as replies in this thread.",
+            },
+          ],
+        },
+      ],
+    })
+  );
 
   if (!result.ts) {
     throw new Error("Failed to create Slack thread \u2014 no timestamp returned");
@@ -92,27 +130,29 @@ export async function postWebhookInfo(
   const slack = getSlackClient();
   const channelId = getChannelId();
 
-  await slack.chat.postMessage({
-    channel: channelId,
-    thread_ts: threadTs,
-    text: `Webhook URL: ${webhookUrl}`,
-    blocks: [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*Webhook URL (save this):*\n\`${webhookUrl}\``,
+  await withRetry(() =>
+    slack.chat.postMessage({
+      channel: channelId,
+      thread_ts: threadTs,
+      text: `Webhook URL: ${webhookUrl}`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Webhook URL (save this):*\n\`${webhookUrl}\``,
+          },
         },
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*Add to your prototype:*\n\`\`\`import { Agentation } from "agentation";\n\n<Agentation webhookUrl="${webhookUrl}" />\`\`\``,
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Add to your prototype:*\n\`\`\`import { Agentation } from "agentation";\n\n<Agentation webhookUrl="${webhookUrl}" />\`\`\``,
+          },
         },
-      },
-    ],
-  });
+      ],
+    })
+  );
 }
 
 const KIND_EMOJI: Record<string, string> = {
@@ -215,14 +255,16 @@ export async function postReviewToSlack(
   // Upload screenshot if provided
   if (screenshotBuffer && screenshotBuffer.length > 0) {
     try {
-      await slack.filesUploadV2({
-        channel_id: channelId,
-        thread_ts: threadTs,
-        file: screenshotBuffer,
-        filename: `review-${Date.now()}.png`,
-        title: `Screenshot — ${pageUrl}`,
-        initial_comment: `\ud83d\uddbc\ufe0f *Review submission* for <${pageUrl}|${pageUrl}>\n${annotations.length} annotation${annotations.length === 1 ? "" : "s"}`,
-      });
+      await withRetry(() =>
+        slack.filesUploadV2({
+          channel_id: channelId,
+          thread_ts: threadTs,
+          file: screenshotBuffer,
+          filename: `review-${Date.now()}.png`,
+          title: `Screenshot — ${pageUrl}`,
+          initial_comment: `\ud83d\uddbc\ufe0f *Review submission* for <${pageUrl}|${pageUrl}>\n${annotations.length} annotation${annotations.length === 1 ? "" : "s"}`,
+        })
+      );
     } catch (err) {
       console.error("Failed to upload screenshot to Slack:", err);
       // Continue posting annotations even if screenshot upload fails
@@ -271,12 +313,14 @@ export async function postReviewToSlack(
   const BLOCK_LIMIT = 50;
   for (let i = 0; i < summaryBlocks.length; i += BLOCK_LIMIT) {
     const chunk = summaryBlocks.slice(i, i + BLOCK_LIMIT);
-    await slack.chat.postMessage({
-      channel: channelId,
-      thread_ts: threadTs,
-      text: `Review: ${annotations.length} annotations on ${pageUrl}`,
-      blocks: chunk,
-    });
+    await withRetry(() =>
+      slack.chat.postMessage({
+        channel: channelId,
+        thread_ts: threadTs,
+        text: `Review: ${annotations.length} annotations on ${pageUrl}`,
+        blocks: chunk,
+      })
+    );
   }
 }
 

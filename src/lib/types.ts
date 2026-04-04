@@ -90,7 +90,7 @@ export interface WebhookEvent {
  * Includes annotations + base64 screenshot.
  */
 export interface ReviewSubmission {
-  projectId: string;
+  projectId?: string;
   url: string;
   annotations: AgentationAnnotation[];
   screenshot?: string; // base64 data URL
