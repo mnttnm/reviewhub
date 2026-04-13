@@ -15,7 +15,7 @@ ReviewHub is a lightweight Next.js app that acts as a bridge between the Agentat
 
 1. **Create a project** on the ReviewHub dashboard — this creates a Slack thread and gives you a webhook URL.
 2. **Add Agentation** to your prototype with the webhook URL.
-3. **Reviewers annotate** the live UI. Each annotation is posted to Slack in real time.
+3. **Reviewers annotate** the live UI. Each annotation is posted to Slack in real time — with its own screenshot when using Option C.
 4. **On submit**, a full-page screenshot + all annotations are posted to the Slack thread.
 
 ### Stateless Architecture
@@ -84,7 +84,7 @@ import { Agentation } from "agentation";
 <Agentation webhookUrl="https://reviewhub-weld.vercel.app/api/webhook/YOUR_TOKEN" />
 ```
 
-### Option B: With screenshot capture (recommended)
+### Option B: With screenshot on submit only
 
 ```bash
 npm install modern-screenshot
@@ -112,6 +112,52 @@ function App() {
   );
 }
 ```
+
+### Option C: With screenshot per annotation (recommended)
+
+Each annotation is posted to Slack with its own screenshot, giving reviewers
+full visual context for every piece of feedback.
+
+```bash
+npm install modern-screenshot
+```
+
+Copy `src/components/review-capture.tsx` into your prototype, then:
+
+```tsx
+import { useRef } from "react";
+import { Agentation } from "agentation";
+import ReviewCapture, { type ReviewCaptureHandle } from "./review-capture";
+
+function App() {
+  const captureRef = useRef<ReviewCaptureHandle>(null);
+  return (
+    <>
+      <ReviewCapture
+        ref={captureRef}
+        webhookUrl="https://reviewhub-weld.vercel.app/api/webhook/YOUR_TOKEN"
+      />
+      <Agentation
+        onAnnotationAdd={(annotation) =>
+          captureRef.current?.sendAnnotation(annotation)
+        }
+        onAnnotationUpdate={(annotation) =>
+          captureRef.current?.sendAnnotation(annotation, "annotation.update")
+        }
+        onSubmit={(output, annotations) =>
+          captureRef.current?.submit(annotations)
+        }
+      />
+    </>
+  );
+}
+```
+
+> **Note:** When using per-annotation screenshots, you may want to omit the
+> `webhookUrl` prop from `<Agentation>` to avoid duplicate posts (ReviewCapture
+> already forwards each annotation to the webhook with the screenshot attached).
+> The deduplication layer will handle duplicates if both are set, but removing
+> `webhookUrl` avoids unnecessary network requests.
 
 ## Webhook API
 

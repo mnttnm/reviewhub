@@ -58,6 +58,10 @@ interface ReviewCaptureProps {
 
 export interface ReviewCaptureHandle {
   submit: (annotations: AgentationAnnotation[]) => Promise<void>;
+  sendAnnotation: (
+    annotation: AgentationAnnotation,
+    eventType?: "annotation.add" | "annotation.update"
+  ) => Promise<void>;
 }
 
 /**
@@ -138,8 +142,47 @@ const ReviewCapture = forwardRef<ReviewCaptureHandle, ReviewCaptureProps>(
       [webhookUrl]
     );
 
-    // Expose submit method via ref
-    useImperativeHandle(ref, () => ({ submit: handleSubmit }), [handleSubmit]);
+    const handleAnnotationEvent = useCallback(
+      async (
+        annotation: AgentationAnnotation,
+        eventType: "annotation.add" | "annotation.update" = "annotation.add"
+      ) => {
+        const screenshot = await captureScreenshot();
+
+        const payload = {
+          event: eventType,
+          timestamp: Date.now(),
+          url: window.location.href,
+          annotation,
+          screenshot,
+        };
+
+        try {
+          const res = await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!res.ok) {
+            console.error(
+              "ReviewCapture: annotation webhook failed:",
+              res.status
+            );
+          }
+        } catch (err) {
+          console.error("ReviewCapture: annotation webhook error:", err);
+        }
+      },
+      [webhookUrl]
+    );
+
+    // Expose submit and per-annotation methods via ref
+    useImperativeHandle(
+      ref,
+      () => ({ submit: handleSubmit, sendAnnotation: handleAnnotationEvent }),
+      [handleSubmit, handleAnnotationEvent]
+    );
 
     // Renders nothing — wire up via ref:
     //   <Agentation onSubmit={(output, annotations) => captureRef.current?.submit(annotations)} />
