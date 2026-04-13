@@ -5,6 +5,7 @@ import {
   uploadScreenshotToSlack,
   generateMarkdownSummary,
 } from "@/lib/slack";
+import { annotateScreenshot } from "@/lib/annotate";
 import {
   ReviewSubmission,
   WebhookEvent,
@@ -211,7 +212,17 @@ async function handleReviewSubmission(
         /^data:image\/\w+;base64,/,
         ""
       );
-      screenshotBuffer = Buffer.from(base64Data, "base64");
+      const rawBuffer = Buffer.from(base64Data, "base64");
+
+      // Overlay numbered annotation markers on the screenshot so each
+      // annotation is visually identifiable. We always annotate with ALL
+      // annotations (not just non-deduped ones) so the screenshot is a
+      // complete visual of the review.
+      screenshotBuffer = await annotateScreenshot(
+        rawBuffer,
+        submission.annotations,
+        submission.viewport
+      );
     } catch (err) {
       console.error("Failed to decode screenshot:", err);
     }
@@ -323,7 +334,14 @@ async function handleWebhookEvent(
         /^data:image\/\w+;base64,/,
         ""
       );
-      screenshotBuffer = Buffer.from(base64Data, "base64");
+      const rawBuffer = Buffer.from(base64Data, "base64");
+
+      // Overlay annotation markers on the screenshot. Use all annotations
+      // when available (submit event), or the single annotation for other
+      // event types.
+      const annotationsForMarkers =
+        event.annotations ?? (event.annotation ? [event.annotation] : []);
+      screenshotBuffer = await annotateScreenshot(rawBuffer, annotationsForMarkers);
     } catch (err) {
       console.error("Failed to decode event screenshot:", err);
     }
