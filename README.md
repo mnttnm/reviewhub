@@ -18,6 +18,8 @@ ReviewHub is a lightweight Next.js app that acts as a bridge between the Agentat
 3. **Reviewers annotate** the live UI. Each annotation is posted to Slack in real time — with its own screenshot when using Option C.
 4. **On submit**, a full-page screenshot + all annotations are posted to the Slack thread.
 
+Screenshots are automatically annotated with **numbered marker pins** at each annotation's position (and optional bounding-box highlights), so you can match marker #3 on the image to annotation #3 in the text. This requires the `viewport` field in the webhook payload (see [Webhook API](#webhook-api)).
+
 ### Stateless Architecture
 
 ReviewHub encodes Slack thread info (thread timestamp + project name) directly into the webhook URL as a base64url token. No database or server-side storage is needed — Slack is the single source of truth, and webhook URLs survive redeployments.
@@ -34,6 +36,7 @@ src/
 ├── components/
 │   └── review-capture.tsx                # Client component for screenshot capture (copy into prototype)
 └── lib/
+    ├── annotate.ts                       # Overlay numbered markers on screenshots (sharp)
     ├── slack.ts                          # Slack API helpers (post messages, upload screenshots)
     ├── store.ts                          # Stateless token encode/decode
     └── types.ts                          # TypeScript types (annotations, events, tokens)
@@ -170,7 +173,8 @@ Accepts two payload formats:
 {
   "url": "https://my-app.vercel.app/page",
   "annotations": [{ "id": "...", "comment": "...", ... }],
-  "screenshot": "data:image/jpeg;base64,..."
+  "screenshot": "data:image/jpeg;base64,...",
+  "viewport": { "width": 1440, "height": 900, "devicePixelRatio": 2, "scrollY": 0 }
 }
 ```
 
@@ -212,4 +216,5 @@ Set `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID` in your Vercel project's environmen
 - **No database** — project tokens are self-contained (base64url-encoded JSON with Slack thread timestamp + project name).
 - **Annotation dedup** — in-memory best-effort deduplication prevents double-posting when Agentation real-time events race with the ReviewCapture submit. On serverless, this is per-instance only.
 - **Screenshot as JPEG** — compressed at 85% quality for smaller payloads. Uploaded to Slack via `files.uploadV2`.
+- **Annotation markers** — screenshots are composited server-side with numbered pins (via `sharp`) using annotation `x`/`y` coordinates and viewport data. Handles DPR scaling and fixed-position elements.
 - **CORS enabled** — the webhook accepts cross-origin requests so prototypes on any domain can POST to it.
