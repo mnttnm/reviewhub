@@ -20,6 +20,30 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+.control {
+  width: 100%;
+  border: 1px solid #525252;
+  border-radius: 0;
+  background: #0b0b0b;
+  padding: 0.875rem 1rem;
+  color: #e8e4da;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.control::placeholder {
+  color: #777;
+}
+
+.control:focus {
+  border-color: #e61919;
+  box-shadow: none !important;
+}
+
+select.control {
+  color-scheme: dark;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

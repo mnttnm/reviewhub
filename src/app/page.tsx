@@ -125,63 +125,80 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f3ea] text-[#1f241f] font-[family-name:var(--font-geist-sans)]">
-      <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-8 sm:px-8 lg:px-10">
-        <header className="mb-10 flex flex-col gap-6 border-b border-[#d9d0c1] pb-8 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-[#77705f]">
-              Review operations
-            </p>
-            <h1 className="text-4xl font-black tracking-[-0.04em] sm:text-6xl">
-              ReviewHub
+    <div className="min-h-screen overflow-hidden bg-[#0b0b0b] text-[#e8e4da] font-[family-name:var(--font-geist-sans)]">
+      <div className="pointer-events-none fixed inset-0 opacity-[0.06] [background-image:repeating-linear-gradient(0deg,transparent,transparent_2px,#fff_2px,#fff_3px)]" />
+      <main className="relative mx-auto grid min-h-screen w-full max-w-[1600px] grid-rows-[auto_1fr] border-x border-[#353535]">
+        <header className="grid border-b border-[#353535] lg:grid-cols-[1.25fr_0.75fr]">
+          <section className="min-w-0 p-5 sm:p-8">
+            <div className="mb-6 flex items-center gap-3 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.22em] text-[#a6a197]">
+              <span>[ REVIEW OPS ]</span>
+              <span className="h-px flex-1 bg-[#353535]" />
+              <span>REV / 04</span>
+            </div>
+            <h1 className="max-w-5xl text-[clamp(4.5rem,13vw,13rem)] font-black uppercase leading-[0.78] tracking-[-0.075em]">
+              Review
+              <br />
+              Hub
             </h1>
-          </div>
-          <div className="grid grid-cols-3 gap-6 text-right sm:min-w-[420px]">
-            <Metric label="projects" value={totals.projects} />
-            <Metric label="reviews" value={totals.reviews} />
-            <Metric label="comments" value={totals.comments} />
-          </div>
+          </section>
+          <aside className="grid border-t border-[#353535] lg:border-l lg:border-t-0">
+            <Metric label="active projects" value={totals.projects} />
+            <Metric label="reviews posted" value={totals.reviews} />
+            <Metric label="comments routed" value={totals.comments} accent />
+          </aside>
         </header>
 
-        <section className="flex-1">
-          <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-2xl font-bold tracking-[-0.03em]">
-                Active projects
-              </h2>
-              <p className="text-sm text-[#756d5c]">
-                Copy a webhook, check routing, or jump to the latest destination.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={refreshProjects}
-                className="rounded-full border border-[#c9beaa] px-4 py-2 text-sm font-medium text-[#4c473c] transition hover:bg-[#eee7da]"
-              >
-                Refresh
-              </button>
+        <section className="grid min-h-0 lg:grid-cols-[260px_1fr]">
+          <nav className="border-b border-[#353535] p-5 lg:border-b-0 lg:border-r">
+            <div className="sticky top-5 space-y-3 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.12em]">
               <button
                 type="button"
                 onClick={() => setModalOpen(true)}
-                className="rounded-full bg-[#20251d] px-5 py-2 text-sm font-semibold text-[#fffaf0] transition hover:bg-[#3d452f]"
+                className="w-full border border-[#e61919] bg-[#e61919] px-4 py-3 text-left font-bold text-[#0b0b0b] transition hover:bg-[#ff2a2a]"
               >
-                New project
+                + New project
               </button>
+              <button
+                type="button"
+                onClick={refreshProjects}
+                className="w-full border border-[#525252] px-4 py-3 text-left text-[#e8e4da] transition hover:border-[#e8e4da]"
+              >
+                Refresh index
+              </button>
+              <div className="border border-[#353535] p-4 text-[10px] leading-5 text-[#8d887d]">
+                <div>MODE / PROJECT ROUTER</div>
+                <div>DEST / SLACK + CONF</div>
+                <div>STATE / LIVE</div>
+              </div>
             </div>
-          </div>
+          </nav>
 
-          {projects.length === 0 ? (
-            <div className="border-t border-[#d9d0c1] py-14 text-[#756d5c]">
-              No projects yet. Create one to generate a webhook.
+          <section className="min-w-0">
+            <div className="grid grid-cols-[1fr_auto] border-b border-[#353535] px-5 py-4 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#a6a197]">
+              <span>Active projects</span>
+              <span>{projects.length} units</span>
             </div>
-          ) : (
-            <div className="border-t border-[#d9d0c1]">
-              {projects.map((project) => (
-                <ProjectRow key={project.id || project.token} project={project} />
-              ))}
-            </div>
-          )}
+
+            {projects.length === 0 ? (
+              <div className="grid min-h-[320px] place-items-center p-8 text-center">
+                <div>
+                  <p className="mb-3 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.2em] text-[#e61919]">
+                    No routing units found
+                  </p>
+                  <p className="max-w-md text-sm text-[#a6a197]">
+                    Create a project to generate the webhook endpoint Agentation
+                    should call.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div>
+                {projects.map((project) => (
+                  <ProjectRow key={project.id || project.token} project={project} />
+                ))}
+              </div>
+            )}
+          </section>
         </section>
       </main>
 
@@ -218,13 +235,30 @@ export default function Home() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
+function Metric({
+  accent,
+  label,
+  value,
+}: {
+  accent?: boolean;
+  label: string;
+  value: number;
+}) {
   return (
-    <div>
-      <div className="text-3xl font-black tracking-[-0.05em]">{value}</div>
-      <div className="text-xs uppercase tracking-[0.18em] text-[#77705f]">
+    <div className="grid grid-cols-[1fr_auto] items-end border-b border-[#353535] p-5 last:border-b-0">
+      <span className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#8d887d]">
         {label}
-      </div>
+      </span>
+      <data
+        value={value}
+        className={
+          accent
+            ? "text-5xl font-black tracking-[-0.08em] text-[#e61919]"
+            : "text-5xl font-black tracking-[-0.08em]"
+        }
+      >
+        {value}
+      </data>
     </div>
   );
 }
@@ -244,56 +278,79 @@ function ProjectRow({ project }: { project: Project }) {
   };
 
   return (
-    <article className="grid gap-5 border-b border-[#d9d0c1] py-6 lg:grid-cols-[1.2fr_1.4fr_0.8fr] lg:items-center">
-      <div className="min-w-0">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <h3 className="truncate text-xl font-bold tracking-[-0.03em]">
-            {project.name}
-          </h3>
-          <DestinationDot active={Boolean(project.destinations?.slack?.enabled)}>
+    <article className="grid border-b border-[#353535] transition hover:bg-[#111] xl:grid-cols-[minmax(220px,0.85fr)_minmax(360px,1.35fr)_minmax(240px,0.65fr)]">
+      <section className="min-w-0 border-b border-[#353535] p-5 xl:border-b-0 xl:border-r">
+        <div className="mb-2 flex items-center gap-2 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.16em] text-[#8d887d]">
+          <span>{project.grouping || "legacy"}</span>
+          <span>{"/ /"}</span>
+          <span>{project.id || "legacy"}</span>
+        </div>
+        <h3 className="truncate text-2xl font-black uppercase leading-none tracking-[-0.055em]">
+          {project.name}
+        </h3>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <DestinationMarker active={Boolean(project.destinations?.slack?.enabled)}>
             Slack
-          </DestinationDot>
-          <DestinationDot
+          </DestinationMarker>
+          <DestinationMarker
             active={Boolean(project.destinations?.confluence?.enabled)}
           >
             Confluence
-          </DestinationDot>
+          </DestinationMarker>
         </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-[#756d5c]">
-          <span>{project.grouping || "legacy"} grouping</span>
-          <span>{project.reviewCount || 0} reviews</span>
-          <span>{project.commentCount || 0} comments</span>
-          {project.lastReviewAt && <span>last {formatDate(project.lastReviewAt)}</span>}
-        </div>
-      </div>
+      </section>
 
-      <div className="min-w-0">
-        <div className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#8b826f]">
-          Webhook
-        </div>
-        <div className="flex min-w-0 items-center gap-2">
-          <code className="min-w-0 flex-1 truncate rounded-md bg-[#eee7da] px-3 py-2 text-xs text-[#2e3328]">
-            {webhookUrl}
-          </code>
+      <section className="min-w-0 border-b border-[#353535] p-5 xl:border-b-0 xl:border-r">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <span className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#8d887d]">
+            Webhook endpoint
+          </span>
           <button
             type="button"
             onClick={copyWebhook}
-            className="shrink-0 rounded-full bg-[#20251d] px-4 py-2 text-sm font-semibold text-[#fffaf0] transition hover:bg-[#3d452f]"
+            className="border border-[#e61919] px-3 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] font-bold uppercase tracking-[0.12em] text-[#e61919] transition hover:bg-[#e61919] hover:text-[#0b0b0b]"
           >
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
-      </div>
+        <code className="block truncate border border-[#353535] bg-[#080808] px-3 py-3 font-[family-name:var(--font-geist-mono)] text-xs text-[#e8e4da]">
+          {webhookUrl}
+        </code>
+      </section>
 
-      <div className="flex flex-wrap gap-2 lg:justify-end">
-        <DirectLink label="Slack" href={project.latestGroup?.slack?.url} />
-        <DirectLink label="Confluence" href={project.latestGroup?.confluence?.url} />
-      </div>
+      <section className="grid grid-cols-2 xl:grid-cols-1">
+        <div className="grid grid-cols-2 border-r border-[#353535] xl:border-b xl:border-r-0">
+          <Telemetry label="reviews" value={project.reviewCount || 0} />
+          <Telemetry label="comments" value={project.commentCount || 0} />
+        </div>
+        <div className="grid content-between gap-3 p-5">
+          <div className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.14em] text-[#8d887d]">
+            {project.lastReviewAt ? `Last ${formatDate(project.lastReviewAt)}` : "No reviews yet"}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <DirectLink label="Slack" href={project.latestGroup?.slack?.url} />
+            <DirectLink label="Confluence" href={project.latestGroup?.confluence?.url} />
+          </div>
+        </div>
+      </section>
     </article>
   );
 }
 
-function DestinationDot({
+function Telemetry({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="p-5">
+      <data value={value} className="block text-3xl font-black tracking-[-0.06em]">
+        {value}
+      </data>
+      <span className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.16em] text-[#8d887d]">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function DestinationMarker({
   active,
   children,
 }: {
@@ -301,15 +358,14 @@ function DestinationDot({
   children: React.ReactNode;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full text-xs text-[#5f5849]">
-      <span
-        className={
-          active
-            ? "h-2 w-2 rounded-full bg-[#34884f]"
-            : "h-2 w-2 rounded-full bg-[#b7ad9b]"
-        }
-      />
-      {children}
+    <span
+      className={
+        active
+          ? "border border-[#e61919] bg-[#e61919] px-2 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] font-bold uppercase tracking-[0.12em] text-[#0b0b0b]"
+          : "border border-[#4a4a4a] px-2 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.12em] text-[#777]"
+      }
+    >
+      [{children}]
     </span>
   );
 }
@@ -317,7 +373,7 @@ function DestinationDot({
 function DirectLink({ label, href }: { label: string; href?: string }) {
   if (!href) {
     return (
-      <span className="rounded-full border border-[#d9d0c1] px-3 py-1.5 text-sm text-[#9a907c]">
+      <span className="border border-[#353535] px-3 py-1.5 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.12em] text-[#666]">
         {label}
       </span>
     );
@@ -328,7 +384,7 @@ function DirectLink({ label, href }: { label: string; href?: string }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="rounded-full border border-[#b6aa96] px-3 py-1.5 text-sm font-medium text-[#3d432f] transition hover:bg-[#eee7da]"
+      className="border border-[#8d887d] px-3 py-1.5 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.12em] text-[#e8e4da] transition hover:border-[#e61919] hover:text-[#e61919]"
     >
       {label}
     </a>
@@ -379,53 +435,59 @@ function CreateProjectModal({
   onSubmit: (e: React.FormEvent) => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#1f241f]/35 px-4 py-8 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-3xl bg-[#fffaf0] p-6 text-[#1f241f] shadow-2xl">
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-black tracking-[-0.04em]">
+    <div className="fixed inset-0 z-50 grid place-items-start overflow-y-auto bg-[#0b0b0b]/80 p-4 backdrop-blur-sm sm:p-8">
+      <div className="mx-auto w-full max-w-3xl border border-[#e8e4da] bg-[#0b0b0b] text-[#e8e4da]">
+        <header className="grid grid-cols-[1fr_auto] border-b border-[#353535]">
+          <div className="p-5">
+            <p className="mb-2 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#e61919]">
+              Create routing unit
+            </p>
+            <h2 className="text-4xl font-black uppercase leading-none tracking-[-0.06em]">
               New project
             </h2>
-            <p className="text-sm text-[#756d5c]">
-              Create a webhook and choose where reviews should land.
-            </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full px-3 py-1 text-sm text-[#756d5c] transition hover:bg-[#eee7da]"
+            className="border-l border-[#353535] px-5 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.16em] text-[#a6a197] transition hover:bg-[#e61919] hover:text-[#0b0b0b]"
           >
             Close
           </button>
-        </div>
+        </header>
 
-        <form onSubmit={onSubmit} className="space-y-4">
-          <input
-            type="text"
-            placeholder="Project label"
-            value={name}
-            onChange={(e) => onNameChange(e.target.value)}
-            className="w-full rounded-xl border border-[#d3c8b5] bg-transparent px-4 py-3 text-sm outline-none focus:border-[#20251d]"
-            required
-          />
-          <input
-            type="url"
-            placeholder="Default/prototype URL (optional)"
-            value={defaultUrl}
-            onChange={(e) => onDefaultUrlChange(e.target.value)}
-            className="w-full rounded-xl border border-[#d3c8b5] bg-transparent px-4 py-3 text-sm outline-none focus:border-[#20251d]"
-          />
-          <select
-            value={grouping}
-            onChange={(e) => onGroupingChange(e.target.value)}
-            className="w-full rounded-xl border border-[#d3c8b5] bg-transparent px-4 py-3 text-sm outline-none focus:border-[#20251d]"
-          >
-            <option value="daily">Daily thread/page</option>
-            <option value="session">Session thread/page</option>
-            <option value="submission">New thread/page per submission</option>
-          </select>
+        <form onSubmit={onSubmit} className="grid gap-px bg-[#353535]">
+          <Field>
+            <input
+              type="text"
+              placeholder="Project label"
+              value={name}
+              onChange={(e) => onNameChange(e.target.value)}
+              className="control"
+              required
+            />
+          </Field>
+          <Field>
+            <input
+              type="url"
+              placeholder="Default/prototype URL (optional)"
+              value={defaultUrl}
+              onChange={(e) => onDefaultUrlChange(e.target.value)}
+              className="control"
+            />
+          </Field>
+          <Field>
+            <select
+              value={grouping}
+              onChange={(e) => onGroupingChange(e.target.value)}
+              className="control"
+            >
+              <option value="daily">Daily thread/page</option>
+              <option value="session">Session thread/page</option>
+              <option value="submission">New thread/page per submission</option>
+            </select>
+          </Field>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-px bg-[#353535] sm:grid-cols-2">
             <DestinationPanel
               enabled={slackEnabled}
               title="Slack"
@@ -436,7 +498,7 @@ function CreateProjectModal({
                 placeholder="Channel ID (optional)"
                 value={slackChannelId}
                 onChange={(e) => onSlackChannelIdChange(e.target.value)}
-                className="w-full rounded-lg border border-[#d3c8b5] bg-transparent px-3 py-2 text-sm outline-none focus:border-[#20251d]"
+                className="control"
               />
             </DestinationPanel>
             <DestinationPanel
@@ -449,41 +511,49 @@ function CreateProjectModal({
                 placeholder="Space ID (optional)"
                 value={confluenceSpaceId}
                 onChange={(e) => onConfluenceSpaceIdChange(e.target.value)}
-                className="w-full rounded-lg border border-[#d3c8b5] bg-transparent px-3 py-2 text-sm outline-none focus:border-[#20251d]"
+                className="control"
               />
               <input
                 type="text"
                 placeholder="Parent page ID (optional)"
                 value={confluenceParentPageId}
                 onChange={(e) => onConfluenceParentPageIdChange(e.target.value)}
-                className="w-full rounded-lg border border-[#d3c8b5] bg-transparent px-3 py-2 text-sm outline-none focus:border-[#20251d]"
+                className="control"
               />
             </DestinationPanel>
           </div>
 
-          {error && <p className="text-sm text-red-700">{error}</p>}
+          {error && (
+            <div className="bg-[#0b0b0b] p-5 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.12em] text-[#ff2a2a]">
+              {error}
+            </div>
+          )}
 
-          <div className="flex justify-end gap-2 pt-2">
+          <footer className="flex justify-end gap-px bg-[#353535]">
             <button
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="rounded-full px-4 py-2 text-sm font-medium text-[#756d5c] transition hover:bg-[#eee7da] disabled:opacity-50"
+              className="bg-[#0b0b0b] px-5 py-4 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.16em] text-[#a6a197] transition hover:text-[#e8e4da] disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="rounded-full bg-[#20251d] px-5 py-2 text-sm font-semibold text-[#fffaf0] transition hover:bg-[#3d452f] disabled:opacity-50"
+              className="bg-[#e61919] px-5 py-4 font-[family-name:var(--font-geist-mono)] text-xs font-bold uppercase tracking-[0.16em] text-[#0b0b0b] transition hover:bg-[#ff2a2a] disabled:opacity-50"
             >
-              {loading ? "Creating..." : "Create project"}
+              {loading ? "Creating" : "Create"}
             </button>
-          </div>
+          </footer>
         </form>
       </div>
     </div>
   );
+}
+
+function Field({ children }: { children: React.ReactNode }) {
+  return <div className="bg-[#0b0b0b] p-5">{children}</div>;
 }
 
 function DestinationPanel({
@@ -498,19 +568,19 @@ function DestinationPanel({
   title: string;
 }) {
   return (
-    <div className="rounded-2xl border border-[#d3c8b5] p-4">
-      <label className="mb-3 flex items-center justify-between text-sm font-semibold">
-        {title}
+    <section className="bg-[#0b0b0b] p-5">
+      <label className="mb-4 flex items-center justify-between font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.16em]">
+        [{title}]
         <input
           type="checkbox"
           checked={enabled}
           onChange={(e) => onEnabledChange(e.target.checked)}
         />
       </label>
-      <div className={enabled ? "space-y-2" : "pointer-events-none space-y-2 opacity-40"}>
+      <div className={enabled ? "space-y-3" : "pointer-events-none space-y-3 opacity-35"}>
         {children}
       </div>
-    </div>
+    </section>
   );
 }
 
