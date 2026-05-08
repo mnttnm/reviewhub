@@ -71,7 +71,6 @@ export async function createReviewPage(
 
   const body = [
     `<h1>${escapeHtml(title)}</h1>`,
-    `<p><small>ReviewHub feedback log. New comments are appended below in a compact, copy-friendly format.</small></p>`,
     `<hr />`,
   ].join("");
 
@@ -137,39 +136,43 @@ function renderSubmission(input: {
   slackUrl?: string;
 }): string {
   const submittedAt = new Date().toISOString();
+  const slackLine = input.slackUrl
+    ? `<p>Slack: ${linkHtml(input.slackUrl)}</p>`
+    : "";
 
   return [
-    `<p><small><strong>${submittedAt}</strong> | Page: ${linkHtml(input.pageUrl)}${input.slackUrl ? ` | Slack: ${linkHtml(input.slackUrl)}` : ""}</small></p>`,
-    input.annotations
-      .map((ann, index) =>
-        renderAnnotation(index + 1, ann, input.pageUrl, input.slackUrl)
-      )
-      .join(""),
+    `<p><strong>${submittedAt}</strong></p>`,
+    slackLine,
+    input.annotations.map((ann) => renderAnnotation(ann, input.pageUrl)).join(""),
     `<hr />`,
   ].join("");
 }
 
 function renderAnnotation(
-  index: number,
   ann: AgentationAnnotation,
-  fallbackPageUrl: string,
-  slackUrl?: string
+  fallbackPageUrl: string
 ): string {
   const labels = [ann.severity, ann.intent].filter(Boolean).join(" / ");
-  const title = labels ? `#${index} - ${labels}` : `#${index}`;
   const element = formatElement(ann);
-  const lines = [
-    `${title}`,
-    `comment: ${ann.comment}`,
-    `page: ${ann.url || fallbackPageUrl}`,
-    slackUrl ? `slack: ${slackUrl}` : "",
-    ann.nearbyText ? `nearby: ${ann.nearbyText}` : "",
-    ann.elementPath ? `selector: ${ann.elementPath}` : "",
-    ann.reactComponents ? `component: ${ann.reactComponents}` : "",
-    element ? `element: ${element}` : "",
-  ].filter(Boolean);
+  const details = [
+    ann.nearbyText
+      ? `<p><strong>nearby:</strong> ${escapeHtml(ann.nearbyText)}</p>`
+      : "",
+    ann.elementPath
+      ? `<p><strong>selector:</strong> ${escapeHtml(ann.elementPath)}</p>`
+      : "",
+    ann.reactComponents
+      ? `<p><strong>component:</strong> ${escapeHtml(ann.reactComponents)}</p>`
+      : "",
+    element ? `<p><strong>element:</strong> ${escapeHtml(element)}</p>` : "",
+  ].join("");
 
-  return `<pre><code>${escapeHtml(lines.join("\n"))}</code></pre>`;
+  return [
+    labels ? `<h3>${escapeHtml(labels)}</h3>` : "",
+    `<p>Page: ${linkHtml(ann.url || fallbackPageUrl)}</p>`,
+    paragraphize(ann.comment),
+    details,
+  ].join("");
 }
 
 function formatElement(ann: AgentationAnnotation): string {
@@ -180,6 +183,16 @@ function formatElement(ann: AgentationAnnotation): string {
   }
 
   return "";
+}
+
+function paragraphize(value: string): string {
+  const paragraphs = value
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (paragraphs.length === 0) return "<p></p>";
+  return paragraphs.map((part) => `<p>${escapeHtml(part)}</p>`).join("");
 }
 
 function getPageUrl(page: ConfluencePage): string | undefined {

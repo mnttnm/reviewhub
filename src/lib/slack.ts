@@ -169,7 +169,6 @@ export async function postWebhookInfo(
  * comment, reviewed page, and enough element context to locate the issue.
  */
 function formatAnnotationLine(
-  index: number,
   ann: AgentationAnnotation,
   pageUrl: string
 ): string {
@@ -178,10 +177,10 @@ function formatAnnotationLine(
     : "";
   const intent = ann.intent ? INTENT_LABEL[ann.intent] || ann.intent : "";
   const labels = [severity, intent].filter(Boolean).join(" ");
-  const title = labels ? `*#${index}* ${labels}` : `*#${index}*`;
+  const title = labels ? `*${labels}*` : "";
 
   const parts: string[] = [
-    `${title}\n>${truncateForSlack(ann.comment.replace(/\n/g, "\n>"), 700)}`,
+    `${title ? `${title}\n` : ""}${truncateForSlack(ann.comment, 700)}`,
   ];
 
   const reviewedPage = ann.url || pageUrl;
@@ -271,8 +270,8 @@ export async function postReviewToSlack(
   // Build annotation summary message
   if (annotations.length === 0) return;
 
-  const annotationLines = annotations.map((ann, i) =>
-    formatAnnotationLine(i + 1, ann, pageUrl)
+  const annotationLines = annotations.map((ann) =>
+    formatAnnotationLine(ann, pageUrl)
   );
 
   const summaryBlocks = [
@@ -280,7 +279,7 @@ export async function postReviewToSlack(
       type: "section" as const,
       text: {
         type: "mrkdwn" as const,
-        text: `*Review feedback*\n*Page:* <${pageUrl}|${pageUrl}>`,
+        text: `*Page:* <${pageUrl}|${pageUrl}>`,
       },
     },
     {
