@@ -128,6 +128,9 @@ export interface ProjectConfig {
   grouping: ReviewGrouping;
   destinations: ReviewDestinations;
   legacySlackThreadTs?: string;
+  reviewCount?: number;
+  commentCount?: number;
+  lastReviewAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -168,6 +171,9 @@ export interface Project {
   webhookUrl?: string;
   latestGroup?: ReviewGroupState;
   slackThreadTs?: string;
+  reviewCount?: number;
+  commentCount?: number;
+  lastReviewAt?: string;
   createdAt: string;
   updatedAt?: string;
 }

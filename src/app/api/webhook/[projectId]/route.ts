@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { annotateScreenshot } from "@/lib/annotate";
 import { publishReview } from "@/lib/publish";
-import { decodeProjectToken, getProject } from "@/lib/store";
+import { decodeProjectToken, getProject, recordProjectReview } from "@/lib/store";
 import { generateMarkdownSummary } from "@/lib/slack";
 import {
   AgentationAnnotation,
@@ -139,6 +139,9 @@ async function handleReviewSubmission(
   });
 
   rollbackFailedDedup(project.id, newAnnotations, result);
+  if (hasSuccessfulDestination(result)) {
+    await recordProjectReview(project.id, newAnnotations.length);
+  }
 
   const markdown = generateMarkdownSummary(
     project.name,
@@ -219,6 +222,9 @@ async function handleWebhookEvent(project: ProjectConfig, event: WebhookEvent) {
   });
 
   rollbackFailedDedup(project.id, newAnnotations, result);
+  if (hasSuccessfulDestination(result)) {
+    await recordProjectReview(project.id, newAnnotations.length);
+  }
 
   const skipped = annotations.length - newAnnotations.length;
   return NextResponse.json(
@@ -255,6 +261,8 @@ async function resolveProject(projectId: string): Promise<ProjectConfig | null> 
       },
     },
     legacySlackThreadTs: legacy.t,
+    reviewCount: 0,
+    commentCount: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

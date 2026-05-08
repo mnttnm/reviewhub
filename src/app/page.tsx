@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Project } from "@/lib/types";
 
 const STORAGE_KEY = "reviewhub-projects";
@@ -20,12 +20,13 @@ function saveLocalProjects(projects: Project[]) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
   } catch {
-    // Local cache is only a convenience when KV is unavailable.
+    // Local cache is only a convenience when project storage is unavailable.
   }
 }
 
 export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState("");
   const [defaultUrl, setDefaultUrl] = useState("");
   const [grouping, setGrouping] = useState("daily");
@@ -36,6 +37,15 @@ export default function Home() {
   const [confluenceParentPageId, setConfluenceParentPageId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const totals = useMemo(
+    () => ({
+      projects: projects.length,
+      reviews: projects.reduce((sum, project) => sum + (project.reviewCount || 0), 0),
+      comments: projects.reduce((sum, project) => sum + (project.commentCount || 0), 0),
+    }),
+    [projects]
+  );
 
   useEffect(() => {
     setProjects(loadLocalProjects());
@@ -50,8 +60,20 @@ export default function Home() {
       setProjects(data.projects);
       saveLocalProjects(data.projects);
     } catch {
-      // The local cache remains useful when running without KV.
+      // Keep showing the local cache.
     }
+  }
+
+  function resetForm() {
+    setName("");
+    setDefaultUrl("");
+    setGrouping("daily");
+    setSlackEnabled(true);
+    setSlackChannelId("");
+    setConfluenceEnabled(false);
+    setConfluenceSpaceId("");
+    setConfluenceParentPageId("");
+    setError(null);
   }
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -93,11 +115,8 @@ export default function Home() {
       const nextProjects = [project, ...projects];
       setProjects(nextProjects);
       saveLocalProjects(nextProjects);
-      setName("");
-      setDefaultUrl("");
-      setSlackChannelId("");
-      setConfluenceSpaceId("");
-      setConfluenceParentPageId("");
+      resetForm();
+      setModalOpen(false);
     } catch {
       setError("Network error while creating project");
     } finally {
@@ -106,172 +125,111 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen p-8 sm:p-16 font-[family-name:var(--font-geist-sans)]">
-      <header className="max-w-5xl mx-auto mb-12">
-        <h1 className="text-3xl font-bold mb-2">ReviewHub</h1>
-        <p className="text-neutral-500">
-          Route Agentation review comments to Slack, Confluence, both, or
-          neither from one stable project webhook.
-        </p>
-      </header>
-
-      <main className="max-w-5xl mx-auto space-y-10">
-        <section className="border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5">
-          <div className="flex items-center justify-between gap-4 mb-4">
-            <h2 className="text-xl font-semibold">Create Project</h2>
-            <button
-              type="button"
-              onClick={refreshProjects}
-              className="text-sm px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900"
-            >
-              Refresh
-            </button>
+    <div className="min-h-screen bg-[#f7f3ea] text-[#1f241f] font-[family-name:var(--font-geist-sans)]">
+      <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-8 sm:px-8 lg:px-10">
+        <header className="mb-10 flex flex-col gap-6 border-b border-[#d9d0c1] pb-8 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-[#77705f]">
+              Review operations
+            </p>
+            <h1 className="text-4xl font-black tracking-[-0.04em] sm:text-6xl">
+              ReviewHub
+            </h1>
           </div>
+          <div className="grid grid-cols-3 gap-6 text-right sm:min-w-[420px]">
+            <Metric label="projects" value={totals.projects} />
+            <Metric label="reviews" value={totals.reviews} />
+            <Metric label="comments" value={totals.comments} />
+          </div>
+        </header>
 
-          <form onSubmit={handleCreate} className="grid gap-4">
-            <input
-              type="text"
-              placeholder="Project label, e.g. Client A Dashboard"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-4 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-neutral-400"
-              required
-            />
-            <input
-              type="url"
-              placeholder="Optional default/prototype URL"
-              value={defaultUrl}
-              onChange={(e) => setDefaultUrl(e.target.value)}
-              className="w-full px-4 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-neutral-400"
-            />
-
-            <label className="text-sm">
-              <span className="block mb-1 text-neutral-500">Grouping</span>
-              <select
-                value={grouping}
-                onChange={(e) => setGrouping(e.target.value)}
-                className="w-full px-4 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-transparent text-sm"
-              >
-                <option value="daily">Daily thread/page</option>
-                <option value="session">Session thread/page</option>
-                <option value="submission">New thread/page per submission</option>
-              </select>
-            </label>
-
-            <div className="grid md:grid-cols-2 gap-4">
-              <DestinationCard
-                title="Slack"
-                enabled={slackEnabled}
-                onEnabledChange={setSlackEnabled}
-              >
-                <input
-                  type="text"
-                  placeholder="Slack channel ID, e.g. C0123456789"
-                  value={slackChannelId}
-                  onChange={(e) => setSlackChannelId(e.target.value)}
-                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-transparent text-sm"
-                />
-                <p className="text-xs text-neutral-500">
-                  Leave blank to use SLACK_CHANNEL_ID.
-                </p>
-              </DestinationCard>
-
-              <DestinationCard
-                title="Confluence"
-                enabled={confluenceEnabled}
-                onEnabledChange={setConfluenceEnabled}
-              >
-                <input
-                  type="text"
-                  placeholder="Space ID"
-                  value={confluenceSpaceId}
-                  onChange={(e) => setConfluenceSpaceId(e.target.value)}
-                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-transparent text-sm"
-                />
-                <input
-                  type="text"
-                  placeholder="Optional parent page ID"
-                  value={confluenceParentPageId}
-                  onChange={(e) => setConfluenceParentPageId(e.target.value)}
-                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-transparent text-sm"
-                />
-              </DestinationCard>
-            </div>
-
-            {error && (
-              <p className="text-red-500 text-sm whitespace-pre-line">{error}</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-fit px-5 py-2 bg-neutral-900 dark:bg-neutral-100 text-white dark:text-black rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              {loading ? "Creating..." : "Create Project"}
-            </button>
-          </form>
-        </section>
-
-        <section>
-          <div className="flex items-end justify-between gap-4 mb-4">
+        <section className="flex-1">
+          <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-xl font-semibold">Active Projects</h2>
-              <p className="text-sm text-neutral-500">
-                These are loaded from ReviewHub project storage, with local
-                cache as fallback.
+              <h2 className="text-2xl font-bold tracking-[-0.03em]">
+                Active projects
+              </h2>
+              <p className="text-sm text-[#756d5c]">
+                Copy a webhook, check routing, or jump to the latest destination.
               </p>
             </div>
-            <span className="text-sm text-neutral-500">
-              {projects.length} project{projects.length === 1 ? "" : "s"}
-            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={refreshProjects}
+                className="rounded-full border border-[#c9beaa] px-4 py-2 text-sm font-medium text-[#4c473c] transition hover:bg-[#eee7da]"
+              >
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalOpen(true)}
+                className="rounded-full bg-[#20251d] px-5 py-2 text-sm font-semibold text-[#fffaf0] transition hover:bg-[#3d452f]"
+              >
+                New project
+              </button>
+            </div>
           </div>
 
           {projects.length === 0 ? (
-            <div className="border border-dashed border-neutral-300 dark:border-neutral-700 rounded-xl p-6 text-sm text-neutral-500">
-              No active projects yet.
+            <div className="border-t border-[#d9d0c1] py-14 text-[#756d5c]">
+              No projects yet. Create one to generate a webhook.
             </div>
           ) : (
-            <div className="grid gap-4">
+            <div className="border-t border-[#d9d0c1]">
               {projects.map((project) => (
-                <ProjectCard key={project.id || project.token} project={project} />
+                <ProjectRow key={project.id || project.token} project={project} />
               ))}
             </div>
           )}
         </section>
       </main>
+
+      {modalOpen && (
+        <CreateProjectModal
+          confluenceEnabled={confluenceEnabled}
+          confluenceParentPageId={confluenceParentPageId}
+          confluenceSpaceId={confluenceSpaceId}
+          defaultUrl={defaultUrl}
+          error={error}
+          grouping={grouping}
+          loading={loading}
+          name={name}
+          slackChannelId={slackChannelId}
+          slackEnabled={slackEnabled}
+          onClose={() => {
+            if (!loading) {
+              setModalOpen(false);
+              setError(null);
+            }
+          }}
+          onConfluenceEnabledChange={setConfluenceEnabled}
+          onConfluenceParentPageIdChange={setConfluenceParentPageId}
+          onConfluenceSpaceIdChange={setConfluenceSpaceId}
+          onDefaultUrlChange={setDefaultUrl}
+          onGroupingChange={setGrouping}
+          onNameChange={setName}
+          onSlackChannelIdChange={setSlackChannelId}
+          onSlackEnabledChange={setSlackEnabled}
+          onSubmit={handleCreate}
+        />
+      )}
     </div>
   );
 }
 
-function DestinationCard({
-  title,
-  enabled,
-  onEnabledChange,
-  children,
-}: {
-  title: string;
-  enabled: boolean;
-  onEnabledChange: (enabled: boolean) => void;
-  children: React.ReactNode;
-}) {
+function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 p-4 space-y-3">
-      <label className="flex items-center justify-between gap-3 text-sm font-medium">
-        {title}
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(e) => onEnabledChange(e.target.checked)}
-        />
-      </label>
-      <div className={enabled ? "space-y-2" : "space-y-2 opacity-40"}>
-        {children}
+    <div>
+      <div className="text-3xl font-black tracking-[-0.05em]">{value}</div>
+      <div className="text-xs uppercase tracking-[0.18em] text-[#77705f]">
+        {label}
       </div>
     </div>
   );
 }
 
-function ProjectCard({ project }: { project: Project }) {
+function ProjectRow({ project }: { project: Project }) {
   const [copied, setCopied] = useState(false);
   const webhookUrl =
     project.webhookUrl ||
@@ -279,74 +237,63 @@ function ProjectCard({ project }: { project: Project }) {
       ? `${window.location.origin}/api/webhook/${project.id || project.token}`
       : `/api/webhook/${project.id || project.token}`);
 
-  const snippet = `// ${project.name}
-import { Agentation } from "agentation";
-
-<Agentation webhookUrl="${webhookUrl}" />`;
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(snippet);
+  const copyWebhook = async () => {
+    await navigator.clipboard.writeText(webhookUrl);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), 1600);
   };
 
   return (
-    <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl p-5">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h3 className="font-semibold">{project.name}</h3>
-          <p className="text-sm text-neutral-500">
-            Grouping: {project.grouping || "legacy"}{" "}
-            {project.defaultUrl || project.baseUrl
-              ? `• Default URL: ${project.defaultUrl || project.baseUrl}`
-              : ""}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs">
-          <StatusPill active={Boolean(project.destinations?.slack?.enabled)}>
+    <article className="grid gap-5 border-b border-[#d9d0c1] py-6 lg:grid-cols-[1.2fr_1.4fr_0.8fr] lg:items-center">
+      <div className="min-w-0">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <h3 className="truncate text-xl font-bold tracking-[-0.03em]">
+            {project.name}
+          </h3>
+          <DestinationDot active={Boolean(project.destinations?.slack?.enabled)}>
             Slack
-          </StatusPill>
-          <StatusPill active={Boolean(project.destinations?.confluence?.enabled)}>
+          </DestinationDot>
+          <DestinationDot
+            active={Boolean(project.destinations?.confluence?.enabled)}
+          >
             Confluence
-          </StatusPill>
+          </DestinationDot>
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-[#756d5c]">
+          <span>{project.grouping || "legacy"} grouping</span>
+          <span>{project.reviewCount || 0} reviews</span>
+          <span>{project.commentCount || 0} comments</span>
+          {project.lastReviewAt && <span>last {formatDate(project.lastReviewAt)}</span>}
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-3 mt-4">
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs text-neutral-500 font-medium">
-              Setup Snippet
-            </span>
-            <button
-              onClick={handleCopy}
-              className="text-xs px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-            >
-              {copied ? "Copied" : "Copy"}
-            </button>
-          </div>
-          <pre className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3 text-xs overflow-x-auto font-[family-name:var(--font-geist-mono)]">
-            {snippet}
-          </pre>
+      <div className="min-w-0">
+        <div className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#8b826f]">
+          Webhook
         </div>
-
-        <div className="rounded-lg bg-neutral-50 dark:bg-neutral-900 p-3 text-sm space-y-2">
-          <div>
-            <span className="text-neutral-500">Webhook:</span>{" "}
-            <code className="text-xs break-all">{webhookUrl}</code>
-          </div>
-          <DirectLink label="Latest Slack thread" href={project.latestGroup?.slack?.url} />
-          <DirectLink
-            label="Latest Confluence page"
-            href={project.latestGroup?.confluence?.url}
-          />
+        <div className="flex min-w-0 items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded-md bg-[#eee7da] px-3 py-2 text-xs text-[#2e3328]">
+            {webhookUrl}
+          </code>
+          <button
+            type="button"
+            onClick={copyWebhook}
+            className="shrink-0 rounded-full bg-[#20251d] px-4 py-2 text-sm font-semibold text-[#fffaf0] transition hover:bg-[#3d452f]"
+          >
+            {copied ? "Copied" : "Copy"}
+          </button>
         </div>
       </div>
-    </div>
+
+      <div className="flex flex-wrap gap-2 lg:justify-end">
+        <DirectLink label="Slack" href={project.latestGroup?.slack?.url} />
+        <DirectLink label="Confluence" href={project.latestGroup?.confluence?.url} />
+      </div>
+    </article>
   );
 }
 
-function StatusPill({
+function DestinationDot({
   active,
   children,
 }: {
@@ -354,14 +301,15 @@ function StatusPill({
   children: React.ReactNode;
 }) {
   return (
-    <span
-      className={
-        active
-          ? "px-2 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-          : "px-2 py-1 rounded-full bg-neutral-100 text-neutral-500 dark:bg-neutral-800"
-      }
-    >
-      {children}: {active ? "on" : "off"}
+    <span className="inline-flex items-center gap-1.5 rounded-full text-xs text-[#5f5849]">
+      <span
+        className={
+          active
+            ? "h-2 w-2 rounded-full bg-[#34884f]"
+            : "h-2 w-2 rounded-full bg-[#b7ad9b]"
+        }
+      />
+      {children}
     </span>
   );
 }
@@ -369,24 +317,208 @@ function StatusPill({
 function DirectLink({ label, href }: { label: string; href?: string }) {
   if (!href) {
     return (
-      <div>
-        <span className="text-neutral-500">{label}:</span>{" "}
-        <span className="text-neutral-400">available after first review</span>
-      </div>
+      <span className="rounded-full border border-[#d9d0c1] px-3 py-1.5 text-sm text-[#9a907c]">
+        {label}
+      </span>
     );
   }
 
   return (
-    <div>
-      <span className="text-neutral-500">{label}:</span>{" "}
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="underline hover:text-neutral-700 dark:hover:text-neutral-200"
-      >
-        Open
-      </a>
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="rounded-full border border-[#b6aa96] px-3 py-1.5 text-sm font-medium text-[#3d432f] transition hover:bg-[#eee7da]"
+    >
+      {label}
+    </a>
+  );
+}
+
+function CreateProjectModal({
+  confluenceEnabled,
+  confluenceParentPageId,
+  confluenceSpaceId,
+  defaultUrl,
+  error,
+  grouping,
+  loading,
+  name,
+  slackChannelId,
+  slackEnabled,
+  onClose,
+  onConfluenceEnabledChange,
+  onConfluenceParentPageIdChange,
+  onConfluenceSpaceIdChange,
+  onDefaultUrlChange,
+  onGroupingChange,
+  onNameChange,
+  onSlackChannelIdChange,
+  onSlackEnabledChange,
+  onSubmit,
+}: {
+  confluenceEnabled: boolean;
+  confluenceParentPageId: string;
+  confluenceSpaceId: string;
+  defaultUrl: string;
+  error: string | null;
+  grouping: string;
+  loading: boolean;
+  name: string;
+  slackChannelId: string;
+  slackEnabled: boolean;
+  onClose: () => void;
+  onConfluenceEnabledChange: (enabled: boolean) => void;
+  onConfluenceParentPageIdChange: (value: string) => void;
+  onConfluenceSpaceIdChange: (value: string) => void;
+  onDefaultUrlChange: (value: string) => void;
+  onGroupingChange: (value: string) => void;
+  onNameChange: (value: string) => void;
+  onSlackChannelIdChange: (value: string) => void;
+  onSlackEnabledChange: (enabled: boolean) => void;
+  onSubmit: (e: React.FormEvent) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#1f241f]/35 px-4 py-8 backdrop-blur-sm">
+      <div className="w-full max-w-2xl rounded-3xl bg-[#fffaf0] p-6 text-[#1f241f] shadow-2xl">
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-black tracking-[-0.04em]">
+              New project
+            </h2>
+            <p className="text-sm text-[#756d5c]">
+              Create a webhook and choose where reviews should land.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full px-3 py-1 text-sm text-[#756d5c] transition hover:bg-[#eee7da]"
+          >
+            Close
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} className="space-y-4">
+          <input
+            type="text"
+            placeholder="Project label"
+            value={name}
+            onChange={(e) => onNameChange(e.target.value)}
+            className="w-full rounded-xl border border-[#d3c8b5] bg-transparent px-4 py-3 text-sm outline-none focus:border-[#20251d]"
+            required
+          />
+          <input
+            type="url"
+            placeholder="Default/prototype URL (optional)"
+            value={defaultUrl}
+            onChange={(e) => onDefaultUrlChange(e.target.value)}
+            className="w-full rounded-xl border border-[#d3c8b5] bg-transparent px-4 py-3 text-sm outline-none focus:border-[#20251d]"
+          />
+          <select
+            value={grouping}
+            onChange={(e) => onGroupingChange(e.target.value)}
+            className="w-full rounded-xl border border-[#d3c8b5] bg-transparent px-4 py-3 text-sm outline-none focus:border-[#20251d]"
+          >
+            <option value="daily">Daily thread/page</option>
+            <option value="session">Session thread/page</option>
+            <option value="submission">New thread/page per submission</option>
+          </select>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DestinationPanel
+              enabled={slackEnabled}
+              title="Slack"
+              onEnabledChange={onSlackEnabledChange}
+            >
+              <input
+                type="text"
+                placeholder="Channel ID (optional)"
+                value={slackChannelId}
+                onChange={(e) => onSlackChannelIdChange(e.target.value)}
+                className="w-full rounded-lg border border-[#d3c8b5] bg-transparent px-3 py-2 text-sm outline-none focus:border-[#20251d]"
+              />
+            </DestinationPanel>
+            <DestinationPanel
+              enabled={confluenceEnabled}
+              title="Confluence"
+              onEnabledChange={onConfluenceEnabledChange}
+            >
+              <input
+                type="text"
+                placeholder="Space ID (optional)"
+                value={confluenceSpaceId}
+                onChange={(e) => onConfluenceSpaceIdChange(e.target.value)}
+                className="w-full rounded-lg border border-[#d3c8b5] bg-transparent px-3 py-2 text-sm outline-none focus:border-[#20251d]"
+              />
+              <input
+                type="text"
+                placeholder="Parent page ID (optional)"
+                value={confluenceParentPageId}
+                onChange={(e) => onConfluenceParentPageIdChange(e.target.value)}
+                className="w-full rounded-lg border border-[#d3c8b5] bg-transparent px-3 py-2 text-sm outline-none focus:border-[#20251d]"
+              />
+            </DestinationPanel>
+          </div>
+
+          {error && <p className="text-sm text-red-700">{error}</p>}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              className="rounded-full px-4 py-2 text-sm font-medium text-[#756d5c] transition hover:bg-[#eee7da] disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="rounded-full bg-[#20251d] px-5 py-2 text-sm font-semibold text-[#fffaf0] transition hover:bg-[#3d452f] disabled:opacity-50"
+            >
+              {loading ? "Creating..." : "Create project"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
+}
+
+function DestinationPanel({
+  children,
+  enabled,
+  onEnabledChange,
+  title,
+}: {
+  children: React.ReactNode;
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+  title: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-[#d3c8b5] p-4">
+      <label className="mb-3 flex items-center justify-between text-sm font-semibold">
+        {title}
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => onEnabledChange(e.target.checked)}
+        />
+      </label>
+      <div className={enabled ? "space-y-2" : "pointer-events-none space-y-2 opacity-40"}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function formatDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }

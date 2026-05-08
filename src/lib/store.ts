@@ -130,7 +130,29 @@ export async function listProjects(): Promise<ProjectConfig[]> {
   const projects = await Promise.all(ids.map((id) => getProject(id)));
   return projects
     .filter((project): project is ProjectConfig => Boolean(project))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    .sort((a, b) =>
+      (b.lastReviewAt || b.createdAt).localeCompare(a.lastReviewAt || a.createdAt)
+    );
+}
+
+export async function recordProjectReview(
+  projectId: string,
+  commentCount: number
+): Promise<ProjectConfig | null> {
+  const project = await getProject(projectId);
+  if (!project) return null;
+
+  const now = new Date().toISOString();
+  const updated: ProjectConfig = {
+    ...project,
+    reviewCount: (project.reviewCount || 0) + 1,
+    commentCount: (project.commentCount || 0) + commentCount,
+    lastReviewAt: now,
+    updatedAt: now,
+  };
+
+  await saveProject(updated);
+  return updated;
 }
 
 export async function getReviewGroup(

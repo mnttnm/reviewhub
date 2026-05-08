@@ -53,6 +53,8 @@ export async function POST(req: NextRequest) {
     defaultUrl,
     grouping,
     destinations,
+    reviewCount: 0,
+    commentCount: 0,
     createdAt: now,
     updatedAt: now,
   };
