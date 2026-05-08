@@ -3,12 +3,33 @@ import {
   ProjectToken,
   ReviewGroupState,
 } from "./types";
+import Redis from "ioredis";
 
 const PROJECT_INDEX_KEY = "reviewhub:projects";
 const memoryStore = new Map<string, unknown>();
+let redisClient: Redis | null = null;
 
 function kvConfigured(): boolean {
   return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+}
+
+function redisConfigured(): boolean {
+  return Boolean(process.env.REDIS_URL);
+}
+
+function getRedisClient(): Redis {
+  if (redisClient) return redisClient;
+
+  const url = process.env.REDIS_URL;
+  if (!url) {
+    throw new Error("REDIS_URL is not configured");
+  }
+
+  redisClient = new Redis(url, {
+    maxRetriesPerRequest: 3,
+    enableReadyCheck: false,
+  });
+  return redisClient;
 }
 
 async function kvCommand<T>(command: unknown[]): Promise<T> {
@@ -36,40 +57,59 @@ async function kvCommand<T>(command: unknown[]): Promise<T> {
 }
 
 async function getJson<T>(key: string): Promise<T | null> {
-  if (!kvConfigured()) {
-    return (memoryStore.get(key) as T | undefined) ?? null;
+  if (kvConfigured()) {
+    const raw = await kvCommand<string | null>(["GET", key]);
+    return raw ? (JSON.parse(raw) as T) : null;
   }
 
-  const raw = await kvCommand<string | null>(["GET", key]);
-  return raw ? (JSON.parse(raw) as T) : null;
+  if (redisConfigured()) {
+    const raw = await getRedisClient().get(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  }
+
+  return (memoryStore.get(key) as T | undefined) ?? null;
 }
 
 async function setJson(key: string, value: unknown): Promise<void> {
-  if (!kvConfigured()) {
-    memoryStore.set(key, value);
+  if (kvConfigured()) {
+    await kvCommand(["SET", key, JSON.stringify(value)]);
     return;
   }
 
-  await kvCommand(["SET", key, JSON.stringify(value)]);
+  if (redisConfigured()) {
+    await getRedisClient().set(key, JSON.stringify(value));
+    return;
+  }
+
+  memoryStore.set(key, value);
 }
 
 async function sadd(key: string, value: string): Promise<void> {
-  if (!kvConfigured()) {
-    const existing = (memoryStore.get(key) as Set<string> | undefined) ?? new Set();
-    existing.add(value);
-    memoryStore.set(key, existing);
+  if (kvConfigured()) {
+    await kvCommand(["SADD", key, value]);
     return;
   }
 
-  await kvCommand(["SADD", key, value]);
+  if (redisConfigured()) {
+    await getRedisClient().sadd(key, value);
+    return;
+  }
+
+  const existing = (memoryStore.get(key) as Set<string> | undefined) ?? new Set();
+  existing.add(value);
+  memoryStore.set(key, existing);
 }
 
 async function smembers(key: string): Promise<string[]> {
-  if (!kvConfigured()) {
-    return Array.from((memoryStore.get(key) as Set<string> | undefined) ?? []);
+  if (kvConfigured()) {
+    return kvCommand<string[]>(["SMEMBERS", key]);
   }
 
-  return kvCommand<string[]>(["SMEMBERS", key]);
+  if (redisConfigured()) {
+    return getRedisClient().smembers(key);
+  }
+
+  return Array.from((memoryStore.get(key) as Set<string> | undefined) ?? []);
 }
 
 export function createProjectId(): string {

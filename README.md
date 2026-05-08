@@ -27,7 +27,7 @@ The prototype URL is optional. Project identity comes from the ReviewHub project
 
 ## Storage Model
 
-ReviewHub uses Vercel KV when `KV_REST_API_URL` and `KV_REST_API_TOKEN` are configured. Local development falls back to in-memory storage.
+ReviewHub uses Vercel KV REST when `KV_REST_API_URL` and `KV_REST_API_TOKEN` are configured. If Vercel only provides `REDIS_URL`, ReviewHub uses that Redis connection instead. Local development falls back to in-memory storage when neither is present.
 
 Project config:
 
@@ -66,9 +66,12 @@ pnpm install
 ### Environment
 
 ```env
-# Vercel KV, optional locally but recommended in production
+# Persistent storage, optional locally but required in production.
+# Use either KV REST:
 KV_REST_API_URL=
 KV_REST_API_TOKEN=
+# Or Redis URL:
+REDIS_URL=
 
 # Slack, required only for Slack destinations
 SLACK_BOT_TOKEN=xoxb-your-bot-token
