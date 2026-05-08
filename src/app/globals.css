@@ -22,49 +22,45 @@ body {
 
 .control {
   width: 100%;
-  border: 1px solid #525252;
+  border: 1px solid #4a4436;
   border-radius: 0;
-  background: #0b0b0b;
+  background: #100f0c;
   padding: 0.875rem 1rem;
-  color: #e8e4da;
+  color: #eee9dd;
   font-size: 0.875rem;
   outline: none;
 }
 
 .control::placeholder {
-  color: #777;
+  color: #746d5e;
 }
 
 .control:focus {
-  border-color: #e61919;
+  border-color: #d5a33b;
   box-shadow: none !important;
-}
-
-select.control {
-  color-scheme: dark;
 }
 
 .destination-toggle {
   appearance: none;
   width: 2.5rem;
   height: 1.25rem;
-  border: 1px solid #525252;
+  border: 1px solid #4a4436;
   border-radius: 0;
   background:
-    linear-gradient(#8d887d, #8d887d) 0.25rem 50% / 0.65rem 0.65rem no-repeat,
-    #080808;
+    linear-gradient(#8f8776, #8f8776) 0.25rem 50% / 0.65rem 0.65rem no-repeat,
+    #100f0c;
   cursor: pointer;
 }
 
 .destination-toggle:checked {
-  border-color: #e61919;
+  border-color: #d5a33b;
   background:
-    linear-gradient(#0b0b0b, #0b0b0b) calc(100% - 0.25rem) 50% / 0.65rem 0.65rem no-repeat,
-    #e61919;
+    linear-gradient(#15120d, #15120d) calc(100% - 0.25rem) 50% / 0.65rem 0.65rem no-repeat,
+    #d5a33b;
 }
 
 .destination-toggle:focus-visible {
-  outline: 1px solid #e61919;
+  outline: 1px solid #d5a33b;
   outline-offset: 3px;
 }
 

@@ -125,23 +125,27 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen overflow-hidden bg-[#0b0b0b] text-[#e8e4da] font-[family-name:var(--font-geist-sans)]">
-      <div className="pointer-events-none fixed inset-0 opacity-[0.06] [background-image:repeating-linear-gradient(0deg,transparent,transparent_2px,#fff_2px,#fff_3px)]" />
-      <main className="relative mx-auto grid min-h-screen w-full max-w-[1600px] grid-rows-[auto_1fr] border-x border-[#353535]">
-        <header className="grid border-b border-[#353535] lg:grid-cols-[1.25fr_0.75fr]">
-          <section className="min-w-0 p-5 sm:p-8">
-            <div className="mb-6 flex items-center gap-3 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.22em] text-[#a6a197]">
-              <span>[ REVIEW OPS ]</span>
-              <span className="h-px flex-1 bg-[#353535]" />
-              <span>REV / 04</span>
+    <div className="min-h-screen overflow-hidden bg-[#11100e] text-[#eee9dd] font-[family-name:var(--font-geist-sans)]">
+      <div className="pointer-events-none fixed inset-0 opacity-[0.035] [background-image:linear-gradient(#fff_1px,transparent_1px),linear-gradient(90deg,#fff_1px,transparent_1px)] [background-size:48px_48px]" />
+      <main className="relative mx-auto grid min-h-screen w-full max-w-[1520px] grid-rows-[auto_1fr] border-x border-[#2b2924] bg-[#141310]/88">
+        <header className="grid border-b border-[#2b2924] lg:grid-cols-[1.18fr_0.82fr]">
+          <section className="min-w-0 p-6 sm:p-10">
+            <div className="mb-8 flex items-center gap-3 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.24em] text-[#9f998a]">
+              <span>Review operations</span>
+              <span className="h-px flex-1 bg-[#343129]" />
+              <span>Routing console</span>
             </div>
-            <h1 className="max-w-5xl text-[clamp(4.5rem,13vw,13rem)] font-black uppercase leading-[0.78] tracking-[-0.075em]">
+            <h1 className="max-w-4xl text-[clamp(3.5rem,8vw,9rem)] font-black uppercase leading-[0.84] tracking-[-0.065em]">
               Review
               <br />
               Hub
             </h1>
+            <p className="mt-6 max-w-2xl text-base leading-7 text-[#aaa291]">
+              Project webhooks, delivery destinations, and review activity in
+              one operational view.
+            </p>
           </section>
-          <aside className="grid border-t border-[#353535] lg:border-l lg:border-t-0">
+          <aside className="grid border-t border-[#2b2924] bg-[#171611] lg:border-l lg:border-t-0">
             <Metric label="active projects" value={totals.projects} />
             <Metric label="reviews posted" value={totals.reviews} />
             <Metric label="comments routed" value={totals.comments} accent />
@@ -149,32 +153,32 @@ export default function Home() {
         </header>
 
         <section className="grid min-h-0 lg:grid-cols-[260px_1fr]">
-          <nav className="border-b border-[#353535] p-5 lg:border-b-0 lg:border-r">
+          <nav className="border-b border-[#2b2924] p-5 lg:border-b-0 lg:border-r">
             <div className="sticky top-5 space-y-3 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.12em]">
               <button
                 type="button"
                 onClick={() => setModalOpen(true)}
-                className="w-full border border-[#e61919] bg-[#e61919] px-4 py-3 text-left font-bold text-[#0b0b0b] transition hover:bg-[#ff2a2a]"
+                className="w-full border border-[#d5a33b] bg-[#d5a33b] px-4 py-3 text-left font-bold text-[#15120d] transition hover:bg-[#efc15b]"
               >
                 + New project
               </button>
               <button
                 type="button"
                 onClick={refreshProjects}
-                className="w-full border border-[#525252] px-4 py-3 text-left text-[#e8e4da] transition hover:border-[#e8e4da]"
+                className="w-full border border-[#494438] px-4 py-3 text-left text-[#d7d0bf] transition hover:border-[#b7ad96] hover:text-[#f1eadc]"
               >
                 Refresh index
               </button>
-              <div className="border border-[#353535] p-4 text-[10px] leading-5 text-[#8d887d]">
-                <div>MODE / PROJECT ROUTER</div>
-                <div>DEST / SLACK + CONF</div>
-                <div>STATE / LIVE</div>
+              <div className="border border-[#2b2924] bg-[#171611] p-4 text-[10px] leading-5 text-[#8f8776]">
+                <div>Mode: project router</div>
+                <div>Destinations: Slack + Confluence</div>
+                <div>State: live</div>
               </div>
             </div>
           </nav>
 
           <section className="min-w-0">
-            <div className="grid grid-cols-[1fr_auto] border-b border-[#353535] px-5 py-4 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#a6a197]">
+            <div className="grid grid-cols-[1fr_auto] border-b border-[#2b2924] px-5 py-4 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#9f998a]">
               <span>Active projects</span>
               <span>{projects.length} units</span>
             </div>
@@ -182,10 +186,10 @@ export default function Home() {
             {projects.length === 0 ? (
               <div className="grid min-h-[320px] place-items-center p-8 text-center">
                 <div>
-                  <p className="mb-3 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.2em] text-[#e61919]">
+                  <p className="mb-3 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.2em] text-[#d5a33b]">
                     No routing units found
                   </p>
-                  <p className="max-w-md text-sm text-[#a6a197]">
+                  <p className="max-w-md text-sm text-[#aaa291]">
                     Create a project to generate the webhook endpoint Agentation
                     should call.
                   </p>
@@ -245,16 +249,16 @@ function Metric({
   value: number;
 }) {
   return (
-    <div className="grid grid-cols-[1fr_auto] items-end border-b border-[#353535] p-5 last:border-b-0">
-      <span className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#8d887d]">
+    <div className="grid grid-cols-[1fr_auto] items-end border-b border-[#2b2924] p-5 last:border-b-0">
+      <span className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#8f8776]">
         {label}
       </span>
       <data
         value={value}
         className={
           accent
-            ? "text-5xl font-black tracking-[-0.08em] text-[#e61919]"
-            : "text-5xl font-black tracking-[-0.08em]"
+            ? "text-5xl font-black tracking-[-0.07em] text-[#d5a33b]"
+            : "text-5xl font-black tracking-[-0.07em] text-[#eee9dd]"
         }
       >
         {value}
@@ -278,14 +282,14 @@ function ProjectRow({ project }: { project: Project }) {
   };
 
   return (
-    <article className="grid border-b border-[#353535] transition hover:bg-[#111] xl:grid-cols-[minmax(220px,0.85fr)_minmax(360px,1.35fr)_minmax(240px,0.65fr)]">
-      <section className="min-w-0 border-b border-[#353535] p-5 xl:border-b-0 xl:border-r">
-        <div className="mb-2 flex items-center gap-2 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.16em] text-[#8d887d]">
+    <article className="grid border-b border-[#2b2924] transition hover:bg-[#18160f] xl:grid-cols-[minmax(220px,0.85fr)_minmax(360px,1.35fr)_minmax(240px,0.65fr)]">
+      <section className="min-w-0 border-b border-[#2b2924] p-5 xl:border-b-0 xl:border-r">
+        <div className="mb-2 flex items-center gap-2 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.16em] text-[#8f8776]">
           <span>{project.grouping || "legacy"}</span>
-          <span>{"/ /"}</span>
+          <span className="text-[#4f493c]">/</span>
           <span>{project.id || "legacy"}</span>
         </div>
-        <h3 className="truncate text-2xl font-black uppercase leading-none tracking-[-0.055em]">
+        <h3 className="truncate text-2xl font-extrabold leading-none tracking-[-0.04em]">
           {project.name}
         </h3>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -300,31 +304,31 @@ function ProjectRow({ project }: { project: Project }) {
         </div>
       </section>
 
-      <section className="min-w-0 border-b border-[#353535] p-5 xl:border-b-0 xl:border-r">
+      <section className="min-w-0 border-b border-[#2b2924] p-5 xl:border-b-0 xl:border-r">
         <div className="mb-2 flex items-center justify-between gap-3">
-          <span className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#8d887d]">
+          <span className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#8f8776]">
             Webhook endpoint
           </span>
           <button
             type="button"
             onClick={copyWebhook}
-            className="border border-[#e61919] px-3 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] font-bold uppercase tracking-[0.12em] text-[#e61919] transition hover:bg-[#e61919] hover:text-[#0b0b0b]"
+            className="border border-[#7c6e50] px-3 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] font-bold uppercase tracking-[0.12em] text-[#d5a33b] transition hover:border-[#d5a33b] hover:bg-[#d5a33b] hover:text-[#15120d]"
           >
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
-        <code className="block truncate border border-[#353535] bg-[#080808] px-3 py-3 font-[family-name:var(--font-geist-mono)] text-xs text-[#e8e4da]">
+        <code className="block truncate border border-[#2d2a22] bg-[#0f0e0b] px-3 py-3 font-[family-name:var(--font-geist-mono)] text-xs text-[#d7d0bf]">
           {webhookUrl}
         </code>
       </section>
 
       <section className="grid grid-cols-2 xl:grid-cols-1">
-        <div className="grid grid-cols-2 border-r border-[#353535] xl:border-b xl:border-r-0">
+        <div className="grid grid-cols-2 border-r border-[#2b2924] xl:border-b xl:border-r-0">
           <Telemetry label="reviews" value={project.reviewCount || 0} />
           <Telemetry label="comments" value={project.commentCount || 0} />
         </div>
         <div className="grid content-between gap-3 p-5">
-          <div className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.14em] text-[#8d887d]">
+          <div className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.14em] text-[#8f8776]">
             {project.lastReviewAt ? `Last ${formatDate(project.lastReviewAt)}` : "No reviews yet"}
           </div>
           <div className="flex flex-wrap gap-2">
@@ -340,10 +344,10 @@ function ProjectRow({ project }: { project: Project }) {
 function Telemetry({ label, value }: { label: string; value: number }) {
   return (
     <div className="p-5">
-      <data value={value} className="block text-3xl font-black tracking-[-0.06em]">
+      <data value={value} className="block text-3xl font-black tracking-[-0.05em] text-[#eee9dd]">
         {value}
       </data>
-      <span className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.16em] text-[#8d887d]">
+      <span className="font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.16em] text-[#8f8776]">
         {label}
       </span>
     </div>
@@ -361,11 +365,11 @@ function DestinationMarker({
     <span
       className={
         active
-          ? "border border-[#e61919] bg-[#e61919] px-2 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] font-bold uppercase tracking-[0.12em] text-[#0b0b0b]"
-          : "border border-[#4a4a4a] px-2 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.12em] text-[#777]"
+          ? "border border-[#6f603f] bg-[#2a2418] px-2 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] font-bold uppercase tracking-[0.12em] text-[#efc15b]"
+          : "border border-[#3c382f] px-2 py-1 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.12em] text-[#706957]"
       }
     >
-      [{children}]
+      {children}
     </span>
   );
 }
@@ -373,7 +377,7 @@ function DestinationMarker({
 function DirectLink({ label, href }: { label: string; href?: string }) {
   if (!href) {
     return (
-      <span className="border border-[#353535] px-3 py-1.5 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.12em] text-[#666]">
+      <span className="border border-[#2b2924] px-3 py-1.5 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.12em] text-[#706957]">
         {label}
       </span>
     );
@@ -384,7 +388,7 @@ function DirectLink({ label, href }: { label: string; href?: string }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="border border-[#8d887d] px-3 py-1.5 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.12em] text-[#e8e4da] transition hover:border-[#e61919] hover:text-[#e61919]"
+      className="border border-[#6f6655] px-3 py-1.5 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.12em] text-[#d7d0bf] transition hover:border-[#d5a33b] hover:text-[#efc15b]"
     >
       {label}
     </a>
@@ -435,27 +439,27 @@ function CreateProjectModal({
   onSubmit: (e: React.FormEvent) => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-start overflow-y-auto bg-[#0b0b0b]/80 p-4 backdrop-blur-sm sm:p-8">
-      <div className="mx-auto w-full max-w-3xl border border-[#e8e4da] bg-[#0b0b0b] text-[#e8e4da]">
-        <header className="grid grid-cols-[1fr_auto] border-b border-[#353535]">
+    <div className="fixed inset-0 z-50 grid place-items-start overflow-y-auto bg-[#11100e]/82 p-4 backdrop-blur-sm sm:p-8">
+      <div className="mx-auto w-full max-w-3xl border border-[#4a4436] bg-[#141310] text-[#eee9dd] shadow-2xl shadow-black/30">
+        <header className="grid grid-cols-[1fr_auto] border-b border-[#2b2924]">
           <div className="p-5">
-            <p className="mb-2 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#e61919]">
-              Create routing unit
+            <p className="mb-2 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#d5a33b]">
+              Create project route
             </p>
-            <h2 className="text-4xl font-black uppercase leading-none tracking-[-0.06em]">
+            <h2 className="text-4xl font-black leading-none tracking-[-0.055em]">
               New project
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="border-l border-[#353535] px-5 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.16em] text-[#a6a197] transition hover:bg-[#e61919] hover:text-[#0b0b0b]"
+            className="border-l border-[#2b2924] px-5 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.16em] text-[#aaa291] transition hover:bg-[#242116] hover:text-[#efc15b]"
           >
             Close
           </button>
         </header>
 
-        <form onSubmit={onSubmit} className="grid gap-px bg-[#353535]">
+        <form onSubmit={onSubmit} className="grid gap-px bg-[#2b2924]">
           <Field>
             <input
               type="text"
@@ -482,7 +486,7 @@ function CreateProjectModal({
             />
           </Field>
 
-          <div className="grid gap-px bg-[#353535] sm:grid-cols-2">
+          <div className="grid gap-px bg-[#2b2924] sm:grid-cols-2">
             <DestinationPanel
               enabled={slackEnabled}
               title="Slack"
@@ -519,24 +523,24 @@ function CreateProjectModal({
           </div>
 
           {error && (
-            <div className="bg-[#0b0b0b] p-5 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.12em] text-[#ff2a2a]">
+            <div className="bg-[#141310] p-5 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.12em] text-[#efc15b]">
               {error}
             </div>
           )}
 
-          <footer className="flex justify-end gap-px bg-[#353535]">
+          <footer className="flex justify-end gap-px bg-[#2b2924]">
             <button
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="bg-[#0b0b0b] px-5 py-4 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.16em] text-[#a6a197] transition hover:text-[#e8e4da] disabled:opacity-50"
+              className="bg-[#141310] px-5 py-4 font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.16em] text-[#aaa291] transition hover:text-[#eee9dd] disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="bg-[#e61919] px-5 py-4 font-[family-name:var(--font-geist-mono)] text-xs font-bold uppercase tracking-[0.16em] text-[#0b0b0b] transition hover:bg-[#ff2a2a] disabled:opacity-50"
+              className="bg-[#d5a33b] px-5 py-4 font-[family-name:var(--font-geist-mono)] text-xs font-bold uppercase tracking-[0.16em] text-[#15120d] transition hover:bg-[#efc15b] disabled:opacity-50"
             >
               {loading ? "Creating" : "Create"}
             </button>
@@ -548,7 +552,7 @@ function CreateProjectModal({
 }
 
 function Field({ children }: { children: React.ReactNode }) {
-  return <div className="bg-[#0b0b0b] p-5">{children}</div>;
+  return <div className="bg-[#141310] p-5">{children}</div>;
 }
 
 function GroupingControl({
@@ -566,10 +570,10 @@ function GroupingControl({
 
   return (
     <div>
-      <div className="mb-3 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#8d887d]">
+      <div className="mb-3 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#8f8776]">
         Grouping protocol
       </div>
-      <div className="grid gap-px bg-[#353535] sm:grid-cols-3">
+      <div className="grid gap-px bg-[#2b2924] sm:grid-cols-3">
         {options.map((option) => {
           const selected = value === option.value;
 
@@ -580,8 +584,8 @@ function GroupingControl({
               onClick={() => onChange(option.value)}
               className={
                 selected
-                  ? "bg-[#e61919] p-4 text-left text-[#0b0b0b]"
-                  : "bg-[#0b0b0b] p-4 text-left text-[#e8e4da] transition hover:bg-[#141414]"
+                  ? "bg-[#d5a33b] p-4 text-left text-[#15120d]"
+                  : "bg-[#141310] p-4 text-left text-[#eee9dd] transition hover:bg-[#1d1a12]"
               }
             >
               <span className="block font-[family-name:var(--font-geist-mono)] text-xs font-bold uppercase tracking-[0.16em]">
@@ -590,8 +594,8 @@ function GroupingControl({
               <span
                 className={
                   selected
-                    ? "mt-2 block text-xs text-[#3a0505]"
-                    : "mt-2 block text-xs text-[#8d887d]"
+                    ? "mt-2 block text-xs text-[#4a3210]"
+                    : "mt-2 block text-xs text-[#8f8776]"
                 }
               >
                 {option.detail}
@@ -616,9 +620,9 @@ function DestinationPanel({
   title: string;
 }) {
   return (
-    <section className="bg-[#0b0b0b] p-5">
-      <label className="mb-4 flex items-center justify-between font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.16em]">
-        [{title}]
+    <section className="bg-[#141310] p-5">
+      <label className="mb-4 flex items-center justify-between font-[family-name:var(--font-geist-mono)] text-xs uppercase tracking-[0.16em] text-[#d7d0bf]">
+        {title}
         <input
           type="checkbox"
           checked={enabled}
