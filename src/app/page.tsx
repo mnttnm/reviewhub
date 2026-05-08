@@ -1,19 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
-
-interface Project {
-  token: string;
-  name: string;
-  baseUrl: string;
-  slackThreadTs: string;
-  webhookUrl?: string;
-  createdAt: string;
-}
+import type React from "react";
+import { useEffect, useState } from "react";
+import { Project } from "@/lib/types";
 
 const STORAGE_KEY = "reviewhub-projects";
 
-function loadProjects(): Project[] {
+function loadLocalProjects(): Project[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -23,36 +16,47 @@ function loadProjects(): Project[] {
   }
 }
 
-function saveProjects(projects: Project[]) {
+function saveLocalProjects(projects: Project[]) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
   } catch {
-    // localStorage full or unavailable — silent fail
+    // Local cache is only a convenience when KV is unavailable.
   }
 }
 
 export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [name, setName] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
+  const [defaultUrl, setDefaultUrl] = useState("");
+  const [grouping, setGrouping] = useState("daily");
+  const [slackEnabled, setSlackEnabled] = useState(true);
+  const [slackChannelId, setSlackChannelId] = useState("");
+  const [confluenceEnabled, setConfluenceEnabled] = useState(false);
+  const [confluenceSpaceId, setConfluenceSpaceId] = useState("");
+  const [confluenceParentPageId, setConfluenceParentPageId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load projects from localStorage on mount
   useEffect(() => {
-    setProjects(loadProjects());
+    setProjects(loadLocalProjects());
+    void refreshProjects();
   }, []);
 
-  // Save projects to localStorage whenever they change
-  useEffect(() => {
-    if (projects.length > 0) {
-      saveProjects(projects);
+  async function refreshProjects() {
+    try {
+      const res = await fetch("/api/projects");
+      if (!res.ok) return;
+      const data = (await res.json()) as { projects: Project[] };
+      setProjects(data.projects);
+      saveLocalProjects(data.projects);
+    } catch {
+      // The local cache remains useful when running without KV.
     }
-  }, [projects]);
+  }
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !baseUrl.trim()) return;
+    if (!name.trim()) return;
 
     setLoading(true);
     setError(null);
@@ -61,23 +65,41 @@ export default function Home() {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), baseUrl: baseUrl.trim() }),
+        body: JSON.stringify({
+          name: name.trim(),
+          defaultUrl: defaultUrl.trim() || undefined,
+          grouping,
+          destinations: {
+            slack: {
+              enabled: slackEnabled,
+              channelId: slackChannelId.trim() || undefined,
+            },
+            confluence: {
+              enabled: confluenceEnabled,
+              spaceId: confluenceSpaceId.trim() || undefined,
+              parentPageId: confluenceParentPageId.trim() || undefined,
+            },
+          },
+        }),
       });
 
       if (!res.ok) {
         const data = await res.json();
-        const detail = data.detail ? ` (${data.detail})` : "";
-        const hint = data.hint ? `\n${data.hint}` : "";
-        setError(`${data.error || "Failed to create project"}${detail}${hint}`);
+        setError(data.error || "Failed to create project");
         return;
       }
 
       const project: Project = await res.json();
-      setProjects((prev) => [project, ...prev]);
+      const nextProjects = [project, ...projects];
+      setProjects(nextProjects);
+      saveLocalProjects(nextProjects);
       setName("");
-      setBaseUrl("");
+      setDefaultUrl("");
+      setSlackChannelId("");
+      setConfluenceSpaceId("");
+      setConfluenceParentPageId("");
     } catch {
-      setError("Network error — is Slack configured?");
+      setError("Network error while creating project");
     } finally {
       setLoading(false);
     }
@@ -85,30 +107,31 @@ export default function Home() {
 
   return (
     <div className="min-h-screen p-8 sm:p-16 font-[family-name:var(--font-geist-sans)]">
-      <header className="max-w-3xl mx-auto mb-12">
+      <header className="max-w-5xl mx-auto mb-12">
         <h1 className="text-3xl font-bold mb-2">ReviewHub</h1>
         <p className="text-neutral-500">
-          Capture UI review annotations from{" "}
-          <a
-            href="https://www.agentation.com/"
-            className="underline hover:text-neutral-800 dark:hover:text-neutral-200"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Agentation
-          </a>{" "}
-          and post them to Slack with screenshots.
+          Route Agentation review comments to Slack, Confluence, both, or
+          neither from one stable project webhook.
         </p>
       </header>
 
-      <main className="max-w-3xl mx-auto space-y-10">
-        {/* Create Project */}
-        <section>
-          <h2 className="text-xl font-semibold mb-4">Create a Project</h2>
-          <form onSubmit={handleCreate} className="space-y-3">
+      <main className="max-w-5xl mx-auto space-y-10">
+        <section className="border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5">
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <h2 className="text-xl font-semibold">Create Project</h2>
+            <button
+              type="button"
+              onClick={refreshProjects}
+              className="text-sm px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+            >
+              Refresh
+            </button>
+          </div>
+
+          <form onSubmit={handleCreate} className="grid gap-4">
             <input
               type="text"
-              placeholder="Project name"
+              placeholder="Project label, e.g. Client A Dashboard"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full px-4 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-neutral-400"
@@ -116,85 +139,150 @@ export default function Home() {
             />
             <input
               type="url"
-              placeholder="https://my-app.vercel.app"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="Optional default/prototype URL"
+              value={defaultUrl}
+              onChange={(e) => setDefaultUrl(e.target.value)}
               className="w-full px-4 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-neutral-400"
-              required
             />
+
+            <label className="text-sm">
+              <span className="block mb-1 text-neutral-500">Grouping</span>
+              <select
+                value={grouping}
+                onChange={(e) => setGrouping(e.target.value)}
+                className="w-full px-4 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-transparent text-sm"
+              >
+                <option value="daily">Daily thread/page</option>
+                <option value="session">Session thread/page</option>
+                <option value="submission">New thread/page per submission</option>
+              </select>
+            </label>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <DestinationCard
+                title="Slack"
+                enabled={slackEnabled}
+                onEnabledChange={setSlackEnabled}
+              >
+                <input
+                  type="text"
+                  placeholder="Slack channel ID, e.g. C0123456789"
+                  value={slackChannelId}
+                  onChange={(e) => setSlackChannelId(e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-transparent text-sm"
+                />
+                <p className="text-xs text-neutral-500">
+                  Leave blank to use SLACK_CHANNEL_ID.
+                </p>
+              </DestinationCard>
+
+              <DestinationCard
+                title="Confluence"
+                enabled={confluenceEnabled}
+                onEnabledChange={setConfluenceEnabled}
+              >
+                <input
+                  type="text"
+                  placeholder="Space ID"
+                  value={confluenceSpaceId}
+                  onChange={(e) => setConfluenceSpaceId(e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-transparent text-sm"
+                />
+                <input
+                  type="text"
+                  placeholder="Optional parent page ID"
+                  value={confluenceParentPageId}
+                  onChange={(e) => setConfluenceParentPageId(e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-transparent text-sm"
+                />
+              </DestinationCard>
+            </div>
+
             {error && (
               <p className="text-red-500 text-sm whitespace-pre-line">{error}</p>
             )}
+
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2 bg-neutral-900 dark:bg-neutral-100 text-white dark:text-black rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+              className="w-fit px-5 py-2 bg-neutral-900 dark:bg-neutral-100 text-white dark:text-black rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               {loading ? "Creating..." : "Create Project"}
             </button>
           </form>
         </section>
 
-        {/* Projects List */}
-        {projects.length > 0 && (
-          <section>
-            <h2 className="text-xl font-semibold mb-4">Projects</h2>
-            <div className="space-y-4">
+        <section>
+          <div className="flex items-end justify-between gap-4 mb-4">
+            <div>
+              <h2 className="text-xl font-semibold">Active Projects</h2>
+              <p className="text-sm text-neutral-500">
+                These are loaded from ReviewHub project storage, with local
+                cache as fallback.
+              </p>
+            </div>
+            <span className="text-sm text-neutral-500">
+              {projects.length} project{projects.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          {projects.length === 0 ? (
+            <div className="border border-dashed border-neutral-300 dark:border-neutral-700 rounded-xl p-6 text-sm text-neutral-500">
+              No active projects yet.
+            </div>
+          ) : (
+            <div className="grid gap-4">
               {projects.map((project) => (
-                <ProjectCard key={project.token} project={project} />
+                <ProjectCard key={project.id || project.token} project={project} />
               ))}
             </div>
-          </section>
-        )}
-
-        {/* How It Works */}
-        <section className="border-t border-neutral-200 dark:border-neutral-800 pt-10">
-          <h2 className="text-xl font-semibold mb-4">How It Works</h2>
-          <ol className="list-decimal list-inside space-y-3 text-sm text-neutral-600 dark:text-neutral-400">
-            <li>
-              Create a project above — this creates a Slack thread in your
-              configured channel.
-            </li>
-            <li>
-              Install{" "}
-              <code className="bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded text-xs">
-                agentation
-              </code>{" "}
-              in your prototype and configure the webhook URL to point to
-              ReviewHub.
-            </li>
-            <li>
-              Share the prototype URL with your client. They annotate the live
-              UI using Agentation.
-            </li>
-            <li>
-              When they submit, ReviewHub captures a screenshot and posts
-              everything to the Slack thread — screenshot + numbered annotation
-              list.
-            </li>
-          </ol>
+          )}
         </section>
       </main>
     </div>
   );
 }
 
+function DestinationCard({
+  title,
+  enabled,
+  onEnabledChange,
+  children,
+}: {
+  title: string;
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 p-4 space-y-3">
+      <label className="flex items-center justify-between gap-3 text-sm font-medium">
+        {title}
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => onEnabledChange(e.target.checked)}
+        />
+      </label>
+      <div className={enabled ? "space-y-2" : "space-y-2 opacity-40"}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function ProjectCard({ project }: { project: Project }) {
   const [copied, setCopied] = useState(false);
-
   const webhookUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/api/webhook/${project.token}`
-      : `/api/webhook/${project.token}`;
+    project.webhookUrl ||
+    (typeof window !== "undefined"
+      ? `${window.location.origin}/api/webhook/${project.id || project.token}`
+      : `/api/webhook/${project.id || project.token}`);
 
-  const snippet = `// Option A: Use Agentation's built-in webhookUrl
+  const snippet = `// ${project.name}
 import { Agentation } from "agentation";
 
-<Agentation webhookUrl="${webhookUrl}" />
-
-// Option B: Use ReviewCapture for screenshot support
-// (requires modern-screenshot: npm install modern-screenshot)
-// See ReviewCapture component in the repo for details.`;
+<Agentation webhookUrl="${webhookUrl}" />`;
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(snippet);
@@ -204,36 +292,101 @@ import { Agentation } from "agentation";
 
   return (
     <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl p-5">
-      <div className="flex items-start justify-between mb-2">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <h3 className="font-semibold">{project.name}</h3>
-          <p className="text-sm text-neutral-500">{project.baseUrl}</p>
+          <p className="text-sm text-neutral-500">
+            Grouping: {project.grouping || "legacy"}{" "}
+            {project.defaultUrl || project.baseUrl
+              ? `• Default URL: ${project.defaultUrl || project.baseUrl}`
+              : ""}
+          </p>
         </div>
-        <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
-          Slack connected
-        </span>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <StatusPill active={Boolean(project.destinations?.slack?.enabled)}>
+            Slack
+          </StatusPill>
+          <StatusPill active={Boolean(project.destinations?.confluence?.enabled)}>
+            Confluence
+          </StatusPill>
+        </div>
       </div>
 
-      <div className="mt-3">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-neutral-500 font-medium">
-            Setup Snippet
-          </span>
-          <button
-            onClick={handleCopy}
-            className="text-xs px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-          >
-            {copied ? "Copied!" : "Copy"}
-          </button>
+      <div className="grid md:grid-cols-2 gap-3 mt-4">
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-neutral-500 font-medium">
+              Setup Snippet
+            </span>
+            <button
+              onClick={handleCopy}
+              className="text-xs px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <pre className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3 text-xs overflow-x-auto font-[family-name:var(--font-geist-mono)]">
+            {snippet}
+          </pre>
         </div>
-        <pre className="bg-neutral-100 dark:bg-neutral-800 rounded-lg p-3 text-xs overflow-x-auto font-[family-name:var(--font-geist-mono)]">
-          {snippet}
-        </pre>
-      </div>
 
-      <div className="mt-3 text-xs text-neutral-400">
-        Webhook: <code className="text-neutral-500">{webhookUrl}</code>
+        <div className="rounded-lg bg-neutral-50 dark:bg-neutral-900 p-3 text-sm space-y-2">
+          <div>
+            <span className="text-neutral-500">Webhook:</span>{" "}
+            <code className="text-xs break-all">{webhookUrl}</code>
+          </div>
+          <DirectLink label="Latest Slack thread" href={project.latestGroup?.slack?.url} />
+          <DirectLink
+            label="Latest Confluence page"
+            href={project.latestGroup?.confluence?.url}
+          />
+        </div>
       </div>
+    </div>
+  );
+}
+
+function StatusPill({
+  active,
+  children,
+}: {
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={
+        active
+          ? "px-2 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+          : "px-2 py-1 rounded-full bg-neutral-100 text-neutral-500 dark:bg-neutral-800"
+      }
+    >
+      {children}: {active ? "on" : "off"}
+    </span>
+  );
+}
+
+function DirectLink({ label, href }: { label: string; href?: string }) {
+  if (!href) {
+    return (
+      <div>
+        <span className="text-neutral-500">{label}:</span>{" "}
+        <span className="text-neutral-400">available after first review</span>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <span className="text-neutral-500">{label}:</span>{" "}
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline hover:text-neutral-700 dark:hover:text-neutral-200"
+      >
+        Open
+      </a>
     </div>
   );
 }

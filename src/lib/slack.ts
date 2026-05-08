@@ -13,12 +13,16 @@ function getSlackClient(): WebClient {
   return client;
 }
 
-function getChannelId(): string {
-  const channelId = process.env.SLACK_CHANNEL_ID;
-  if (!channelId) {
+export function getDefaultChannelId(): string | undefined {
+  return process.env.SLACK_CHANNEL_ID;
+}
+
+function resolveChannelId(channelId?: string): string {
+  const resolved = channelId || getDefaultChannelId();
+  if (!resolved) {
     throw new Error("Missing SLACK_CHANNEL_ID environment variable");
   }
-  return channelId;
+  return resolved;
 }
 
 /**
@@ -75,14 +79,15 @@ const INTENT_LABEL: Record<string, string> = {
  */
 export async function createProjectThread(
   projectName: string,
-  baseUrl: string
-): Promise<string> {
+  label: string,
+  channelId?: string
+): Promise<{ threadTs: string; url?: string }> {
   const slack = getSlackClient();
-  const channelId = getChannelId();
+  const resolvedChannelId = resolveChannelId(channelId);
 
   const result = await withRetry(() =>
     slack.chat.postMessage({
-      channel: channelId,
+      channel: resolvedChannelId,
       text: `New review project: ${projectName}`,
       blocks: [
         {
@@ -97,7 +102,7 @@ export async function createProjectThread(
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*Prototype URL:* <${baseUrl}|${baseUrl}>\n*Created:* ${new Date().toISOString().slice(0, 10)}`,
+            text: `*Review group:* ${label}\n*Created:* ${new Date().toISOString().slice(0, 10)}`,
           },
         },
         {
@@ -117,7 +122,10 @@ export async function createProjectThread(
     throw new Error("Failed to create Slack thread \u2014 no timestamp returned");
   }
 
-  return result.ts;
+  return {
+    threadTs: result.ts,
+    url: await getSlackPermalink(resolvedChannelId, result.ts),
+  };
 }
 
 /**
@@ -125,14 +133,15 @@ export async function createProjectThread(
  */
 export async function postWebhookInfo(
   threadTs: string,
-  webhookUrl: string
+  webhookUrl: string,
+  channelId?: string
 ): Promise<void> {
   const slack = getSlackClient();
-  const channelId = getChannelId();
+  const resolvedChannelId = resolveChannelId(channelId);
 
   await withRetry(() =>
     slack.chat.postMessage({
-      channel: channelId,
+      channel: resolvedChannelId,
       thread_ts: threadTs,
       text: `Webhook URL: ${webhookUrl}`,
       blocks: [
@@ -245,17 +254,18 @@ function formatAnnotationLine(index: number, ann: AgentationAnnotation): string 
  * deduplicated but a new screenshot is still attached).
  */
 export async function uploadScreenshotToSlack(
+  channelId: string | undefined,
   threadTs: string,
   pageUrl: string,
   annotationCount: number,
   screenshotBuffer: Buffer
 ): Promise<void> {
   const slack = getSlackClient();
-  const channelId = getChannelId();
+  const resolvedChannelId = resolveChannelId(channelId);
 
   await withRetry(() =>
     slack.filesUploadV2({
-      channel_id: channelId,
+      channel_id: resolvedChannelId,
       thread_ts: threadTs,
       file: screenshotBuffer,
       filename: `review-${Date.now()}.jpg`,
@@ -269,6 +279,7 @@ export async function uploadScreenshotToSlack(
  * Post a review submission (screenshot + annotations) to a Slack thread.
  */
 export async function postReviewToSlack(
+  channelId: string | undefined,
   threadTs: string,
   projectName: string,
   pageUrl: string,
@@ -276,12 +287,13 @@ export async function postReviewToSlack(
   screenshotBuffer?: Buffer
 ): Promise<void> {
   const slack = getSlackClient();
-  const channelId = getChannelId();
+  const resolvedChannelId = resolveChannelId(channelId);
 
   // Upload screenshot if provided
   if (screenshotBuffer && screenshotBuffer.length > 0) {
     try {
       await uploadScreenshotToSlack(
+        resolvedChannelId,
         threadTs,
         pageUrl,
         annotations.length,
@@ -337,12 +349,31 @@ export async function postReviewToSlack(
     const chunk = summaryBlocks.slice(i, i + BLOCK_LIMIT);
     await withRetry(() =>
       slack.chat.postMessage({
-        channel: channelId,
+        channel: resolvedChannelId,
         thread_ts: threadTs,
         text: `Review: ${annotations.length} annotations on ${pageUrl}`,
         blocks: chunk,
       })
     );
+  }
+}
+
+async function getSlackPermalink(
+  channelId: string,
+  messageTs: string
+): Promise<string | undefined> {
+  const slack = getSlackClient();
+  try {
+    const result = await withRetry(() =>
+      slack.chat.getPermalink({
+        channel: channelId,
+        message_ts: messageTs,
+      })
+    );
+    return result.permalink;
+  } catch (err) {
+    console.warn("[Slack] Failed to get permalink:", err);
+    return undefined;
   }
 }
 

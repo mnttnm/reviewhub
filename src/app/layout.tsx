@@ -14,9 +14,9 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "ReviewHub — Slack-based UI Review Feedback",
+  title: "ReviewHub - UI Review Feedback Router",
   description:
-    "Capture UI review annotations from Agentation and post them to Slack with screenshots",
+    "Capture UI review annotations from Agentation and route them to Slack and Confluence",
 };
 
 export default function RootLayout({

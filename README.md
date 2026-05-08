@@ -1,45 +1,50 @@
 # ReviewHub
 
-Capture UI review annotations from [Agentation](https://www.agentation.com/) and post them to Slack — with screenshots.
+Capture UI review annotations from [Agentation](https://www.agentation.com/) and route them to Slack, Confluence, both, or neither.
 
-ReviewHub is a lightweight Next.js app that acts as a bridge between the Agentation review widget (embedded in your prototype) and a Slack channel. When a reviewer annotates your UI, ReviewHub posts the annotations and a full-page screenshot to a dedicated Slack thread.
+ReviewHub is a lightweight Next.js app that receives Agentation review webhooks, groups comments by project/day/session/submission, and publishes them to the destinations configured for that project.
 
 ## How It Works
 
+```txt
+Prototype + Agentation
+        |
+        | one ReviewHub webhook URL
+        v
+ReviewHub project router
+        |
+        +--> Slack daily/session thread
+        +--> Confluence daily/session child page
 ```
-┌─────────────────┐      webhook POST       ┌─────────────┐     Slack API     ┌───────┐
-│  Your Prototype  │  ──────────────────────► │  ReviewHub  │  ──────────────►  │ Slack │
-│  + Agentation    │   annotations + screenshot │ (Vercel)  │  thread replies   │       │
-└─────────────────┘                          └─────────────┘                   └───────┘
+
+1. Create a project on the ReviewHub dashboard.
+2. Choose destinations: Slack, Confluence, both, or none.
+3. Choose grouping: daily, session, or per submission.
+4. Copy the single webhook URL into Agentation.
+5. ReviewHub receives comments and routes them server-side based on the project config.
+
+The prototype URL is optional. Project identity comes from the ReviewHub project ID in the webhook URL, so two projects can both run at `http://localhost:3000` and still publish to different Slack threads or Confluence pages.
+
+## Storage Model
+
+ReviewHub uses Vercel KV when `KV_REST_API_URL` and `KV_REST_API_TOKEN` are configured. Local development falls back to in-memory storage.
+
+Project config:
+
+```txt
+reviewhub:project:{projectId}
 ```
 
-1. **Create a project** on the ReviewHub dashboard — this creates a Slack thread and gives you a webhook URL.
-2. **Add Agentation** to your prototype with the webhook URL.
-3. **Reviewers annotate** the live UI. Each annotation is posted to Slack in real time — with its own screenshot when using Option C.
-4. **On submit**, a full-page screenshot + all annotations are posted to the Slack thread.
+Daily/session group state:
 
-Screenshots are automatically annotated with **numbered marker pins** at each annotation's position (and optional bounding-box highlights), so you can match marker #3 on the image to annotation #3 in the text. This requires the `viewport` field in the webhook payload (see [Webhook API](#webhook-api)).
-
-### Stateless Architecture
-
-ReviewHub encodes Slack thread info (thread timestamp + project name) directly into the webhook URL as a base64url token. No database or server-side storage is needed — Slack is the single source of truth, and webhook URLs survive redeployments.
-
-## Project Structure
-
+```txt
+reviewhub:project:{projectId}:group:{groupId}
 ```
-src/
-├── app/
-│   ├── page.tsx                          # Dashboard UI (create projects, copy webhook URLs)
-│   ├── api/
-│   │   ├── projects/route.ts             # POST /api/projects — create project + Slack thread
-│   │   └── webhook/[projectId]/route.ts  # POST /api/webhook/:token — receive annotations
-├── components/
-│   └── review-capture.tsx                # Client component for screenshot capture (copy into prototype)
-└── lib/
-    ├── annotate.ts                       # Overlay numbered markers on screenshots (sharp)
-    ├── slack.ts                          # Slack API helpers (post messages, upload screenshots)
-    ├── store.ts                          # Stateless token encode/decode
-    └── types.ts                          # TypeScript types (annotations, events, tokens)
+
+Latest group link for dashboard visibility:
+
+```txt
+reviewhub:project:{projectId}:latest-group
 ```
 
 ## Setup
@@ -47,174 +52,128 @@ src/
 ### Prerequisites
 
 - Node.js 18+
-- pnpm (or npm/yarn)
-- A Slack workspace with a bot token
+- pnpm
+- Optional: Vercel KV for persistent project storage
+- Optional: Slack bot token
+- Optional: Confluence API token
 
-### 1. Install dependencies
+### Install
 
 ```bash
 pnpm install
 ```
 
-### 2. Configure environment variables
-
-Create a `.env.local` file:
+### Environment
 
 ```env
+# Vercel KV, optional locally but recommended in production
+KV_REST_API_URL=
+KV_REST_API_TOKEN=
+
+# Slack, required only for Slack destinations
 SLACK_BOT_TOKEN=xoxb-your-bot-token
 SLACK_CHANNEL_ID=C0123456789
+
+# Confluence, required only for Confluence destinations
+CONFLUENCE_BASE_URL=https://your-domain.atlassian.net
+CONFLUENCE_EMAIL=you@example.com
+CONFLUENCE_API_TOKEN=your-api-token
+CONFLUENCE_SPACE_ID=123456
+CONFLUENCE_PARENT_PAGE_ID=789012
 ```
 
-**Slack bot scopes needed:** `chat:write`, `files:write` (for screenshot uploads).
+Slack bot scopes: `chat:write`, `files:write`, and `links:read`/permalink access through Slack Web API behavior. Invite the bot to each configured channel.
 
-Make sure to invite the bot to your channel: type `/invite @YourBotName` in the Slack channel.
+Confluence needs permission to create and update pages in the configured space.
 
-### 3. Run locally
+### Run
 
 ```bash
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to create a project and get your webhook URL.
+Open [http://localhost:3000](http://localhost:3000).
 
-## Integrating with Your Prototype
+## New Project Workflow
 
-### Option A: Agentation webhook only (no screenshots)
+1. Enter a project label, e.g. `Client A Dashboard`.
+2. Optionally enter a default/prototype URL for display context.
+3. Select grouping:
+   - `daily`: one Slack thread / Confluence page per project per day.
+   - `session`: one thread/page per provided session ID, falling back to the day.
+   - `submission`: one thread/page per webhook submission.
+4. Enable Slack and provide a channel ID, or leave blank to use `SLACK_CHANNEL_ID`.
+5. Enable Confluence and provide a space ID and optional parent page ID, or use env defaults.
+6. Copy the generated webhook URL.
 
 ```tsx
 import { Agentation } from "agentation";
 
-<Agentation webhookUrl="https://reviewhub-weld.vercel.app/api/webhook/YOUR_TOKEN" />
+<Agentation webhookUrl="https://reviewhub.example.com/api/webhook/proj_abc123" />
 ```
 
-### Option B: With screenshot on submit only
-
-```bash
-npm install modern-screenshot
-```
-
-Copy `src/components/review-capture.tsx` into your prototype, then:
-
-```tsx
-import { useRef } from "react";
-import { Agentation } from "agentation";
-import ReviewCapture from "./review-capture";
-
-function App() {
-  const captureRef = useRef<{ submit: (annotations: any[]) => void }>(null);
-  return (
-    <>
-      <ReviewCapture
-        ref={captureRef}
-        webhookUrl="https://reviewhub-weld.vercel.app/api/webhook/YOUR_TOKEN"
-      />
-      <Agentation
-        onSubmit={(output, annotations) => captureRef.current?.submit(annotations)}
-      />
-    </>
-  );
-}
-```
-
-### Option C: With screenshot per annotation (recommended)
-
-Each annotation is posted to Slack with its own screenshot, giving reviewers
-full visual context for every piece of feedback.
-
-```bash
-npm install modern-screenshot
-```
-
-Copy `src/components/review-capture.tsx` into your prototype, then:
-
-```tsx
-import { useRef } from "react";
-import { Agentation } from "agentation";
-import ReviewCapture, { type ReviewCaptureHandle } from "./review-capture";
-
-function App() {
-  const captureRef = useRef<ReviewCaptureHandle>(null);
-  return (
-    <>
-      <ReviewCapture
-        ref={captureRef}
-        webhookUrl="https://reviewhub-weld.vercel.app/api/webhook/YOUR_TOKEN"
-      />
-      <Agentation
-        onAnnotationAdd={(annotation) =>
-          captureRef.current?.sendAnnotation(annotation)
-        }
-        onAnnotationUpdate={(annotation) =>
-          captureRef.current?.sendAnnotation(annotation, "annotation.update")
-        }
-        onSubmit={(output, annotations) =>
-          captureRef.current?.submit(annotations)
-        }
-      />
-    </>
-  );
-}
-```
-
-> **Note:** When using per-annotation screenshots, you may want to omit the
-> `webhookUrl` prop from `<Agentation>` to avoid duplicate posts (ReviewCapture
-> already forwards each annotation to the webhook with the screenshot attached).
-> The deduplication layer will handle duplicates if both are set, but removing
-> `webhookUrl` avoids unnecessary network requests.
+ReviewHub creates Slack threads and Confluence pages lazily on the first review for each group. The dashboard shows direct links to the latest Slack thread and Confluence page once they exist.
 
 ## Webhook API
 
-### `POST /api/webhook/:token`
+### `POST /api/webhook/:projectId`
 
-Accepts two payload formats:
+Accepts ReviewCapture submissions:
 
-**ReviewSubmission** (from ReviewCapture — includes screenshot):
 ```json
 {
   "url": "https://my-app.vercel.app/page",
-  "annotations": [{ "id": "...", "comment": "...", ... }],
+  "annotations": [{ "id": "...", "comment": "...", "elementPath": "..." }],
   "screenshot": "data:image/jpeg;base64,...",
   "viewport": { "width": 1440, "height": 900, "devicePixelRatio": 2, "scrollY": 0 }
 }
 ```
 
-**WebhookEvent** (from Agentation — real-time events):
+Accepts Agentation events:
+
 ```json
 {
   "event": "annotation.add",
   "timestamp": 1234567890,
   "url": "https://my-app.vercel.app/page",
-  "annotation": { "id": "...", "comment": "...", ... }
+  "annotation": { "id": "...", "comment": "...", "elementPath": "..." }
 }
 ```
 
 Supported events: `annotation.add`, `annotation.update`, `annotation.delete`, `annotations.clear`, `submit`.
 
-### `GET /api/webhook/:token`
+### `GET /api/webhook/:projectId`
 
-Health check — returns project info and accepted events.
+Health check for a project webhook.
+
+### `GET /api/projects`
+
+Lists active ReviewHub projects and their latest destination links.
 
 ### `POST /api/projects`
 
-Create a new project. Body: `{ "name": "My App", "baseUrl": "https://my-app.vercel.app" }`.
+Creates a project.
 
-## Deploy
-
-Deploy to Vercel with the same environment variables:
-
-```bash
-# Using Vercel CLI
-vercel --prod
-
-# Or connect the GitHub repo in the Vercel dashboard
+```json
+{
+  "name": "Client A Dashboard",
+  "defaultUrl": "https://client-a.vercel.app",
+  "grouping": "daily",
+  "destinations": {
+    "slack": { "enabled": true, "channelId": "C0123456789" },
+    "confluence": {
+      "enabled": true,
+      "spaceId": "123456",
+      "parentPageId": "789012"
+    }
+  }
+}
 ```
 
-Set `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID` in your Vercel project's environment variables (Settings → Environment Variables).
+## Validation
 
-## Key Design Decisions
-
-- **No database** — project tokens are self-contained (base64url-encoded JSON with Slack thread timestamp + project name).
-- **Annotation dedup** — in-memory best-effort deduplication prevents double-posting when Agentation real-time events race with the ReviewCapture submit. On serverless, this is per-instance only.
-- **Screenshot as JPEG** — compressed at 85% quality for smaller payloads. Uploaded to Slack via `files.uploadV2`.
-- **Annotation markers** — screenshots are composited server-side with numbered pins (via `sharp`) using annotation `x`/`y` coordinates and viewport data. Handles DPR scaling and fixed-position elements.
-- **CORS enabled** — the webhook accepts cross-origin requests so prototypes on any domain can POST to it.
+```bash
+pnpm exec tsc --noEmit
+pnpm lint
+pnpm build
+```

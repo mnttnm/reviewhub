@@ -1,71 +1,133 @@
 import { NextRequest, NextResponse } from "next/server";
-import { encodeProjectToken } from "@/lib/store";
-import { createProjectThread, postWebhookInfo } from "@/lib/slack";
+import {
+  createProjectId,
+  getLatestReviewGroup,
+  listProjects,
+  saveProject,
+} from "@/lib/store";
+import { ProjectConfig, ReviewDestinations, ReviewGrouping } from "@/lib/types";
+
+export async function GET(req: NextRequest) {
+  const origin = getOrigin(req);
+  const projects = await listProjects();
+  const withLinks = await Promise.all(
+    projects.map(async (project) => ({
+      ...project,
+      webhookUrl: `${origin}/api/webhook/${project.id}`,
+      latestGroup: await getLatestReviewGroup(project.id),
+    }))
+  );
+
+  return NextResponse.json({ projects: withLinks });
+}
 
 /**
- * POST /api/projects — create a new project + Slack thread.
- * Returns a stateless token (base64url-encoded) that encodes the Slack thread info.
- * The token is used in the webhook URL — no server-side storage needed.
+ * POST /api/projects - create a KV-backed project config.
+ * The webhook URL now contains an opaque project ID, not destination metadata.
  */
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { name, baseUrl } = body;
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const defaultUrl =
+    typeof body.defaultUrl === "string"
+      ? body.defaultUrl.trim()
+      : typeof body.baseUrl === "string"
+        ? body.baseUrl.trim()
+        : undefined;
+  const grouping = parseGrouping(body.grouping);
+  const destinations = parseDestinations(body.destinations);
 
-  if (!name || !baseUrl) {
-    return NextResponse.json(
-      { error: "name and baseUrl are required" },
-      { status: 400 }
-    );
+  if (!name) {
+    return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
-  if (!process.env.SLACK_BOT_TOKEN || !process.env.SLACK_CHANNEL_ID) {
-    return NextResponse.json(
-      {
-        error: "Slack not configured",
-        detail: "SLACK_BOT_TOKEN or SLACK_CHANNEL_ID not set",
-      },
-      { status: 500 }
-    );
+  const destinationError = validateDestinations(destinations);
+  if (destinationError) {
+    return NextResponse.json({ error: destinationError }, { status: 400 });
   }
 
-  let slackThreadTs: string;
-  try {
-    slackThreadTs = await createProjectThread(name, baseUrl);
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    console.error("Failed to create Slack thread:", errMsg);
-    return NextResponse.json(
-      {
-        error: "Failed to create Slack thread",
-        detail: errMsg,
-        hint: "Make sure the Slack bot is invited to the channel (type /invite @YourBotName in the channel)",
-      },
-      { status: 500 }
-    );
-  }
+  const now = new Date().toISOString();
+  const project: ProjectConfig = {
+    id: createProjectId(),
+    name,
+    defaultUrl,
+    grouping,
+    destinations,
+    createdAt: now,
+    updatedAt: now,
+  };
 
-  // Encode the token and build the webhook URL
-  const token = encodeProjectToken(slackThreadTs, name);
-  const host = req.headers.get("host") || "reviewhub-weld.vercel.app";
-  const protocol = host.startsWith("localhost") ? "http" : "https";
-  const webhookUrl = `${protocol}://${host}/api/webhook/${token}`;
-
-  // Post webhook URL as first reply in the thread for easy reference
-  try {
-    await postWebhookInfo(slackThreadTs, webhookUrl);
-  } catch {
-    // Non-critical — webhook URL is also returned to the UI
-  }
+  await saveProject(project);
 
   return NextResponse.json(
     {
-      token,
-      name,
-      baseUrl,
-      slackThreadTs,
-      webhookUrl,
-      createdAt: new Date().toISOString(),
+      ...project,
+      webhookUrl: `${getOrigin(req)}/api/webhook/${project.id}`,
     },
     { status: 201 }
   );
+}
+
+function parseGrouping(value: unknown): ReviewGrouping {
+  return value === "session" || value === "submission" ? value : "daily";
+}
+
+function parseDestinations(value: unknown): ReviewDestinations {
+  const destinations = value as Partial<ReviewDestinations> | undefined;
+  const slack = destinations?.slack;
+  const confluence = destinations?.confluence;
+
+  return {
+    slack: {
+      enabled: Boolean(slack?.enabled),
+      channelId:
+        typeof slack?.channelId === "string" && slack.channelId.trim()
+          ? slack.channelId.trim()
+          : process.env.SLACK_CHANNEL_ID,
+    },
+    confluence: {
+      enabled: Boolean(confluence?.enabled),
+      spaceId:
+        typeof confluence?.spaceId === "string" && confluence.spaceId.trim()
+          ? confluence.spaceId.trim()
+          : process.env.CONFLUENCE_SPACE_ID,
+      parentPageId:
+        typeof confluence?.parentPageId === "string" &&
+        confluence.parentPageId.trim()
+          ? confluence.parentPageId.trim()
+          : process.env.CONFLUENCE_PARENT_PAGE_ID,
+    },
+  };
+}
+
+function validateDestinations(destinations: ReviewDestinations): string | null {
+  if (destinations.slack.enabled) {
+    if (!process.env.SLACK_BOT_TOKEN) {
+      return "Slack is enabled but SLACK_BOT_TOKEN is not configured";
+    }
+    if (!destinations.slack.channelId) {
+      return "Slack is enabled but no Slack channel ID was provided";
+    }
+  }
+
+  if (destinations.confluence.enabled) {
+    if (
+      !process.env.CONFLUENCE_BASE_URL ||
+      !process.env.CONFLUENCE_EMAIL ||
+      !process.env.CONFLUENCE_API_TOKEN
+    ) {
+      return "Confluence is enabled but Confluence credentials are not configured";
+    }
+    if (!destinations.confluence.spaceId) {
+      return "Confluence is enabled but no Confluence space ID was provided";
+    }
+  }
+
+  return null;
+}
+
+function getOrigin(req: NextRequest): string {
+  const host = req.headers.get("host") || "reviewhub-weld.vercel.app";
+  const protocol = host.startsWith("localhost") ? "http" : "https";
+  return `${protocol}://${host}`;
 }

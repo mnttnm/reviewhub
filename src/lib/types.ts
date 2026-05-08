@@ -103,23 +103,71 @@ export interface ReviewSubmission {
   };
 }
 
-/**
- * Encoded project token — embedded in webhook URL so no server-side storage needed.
- * Base64url-encoded JSON: { t: threadTs, n: projectName }
- * Channel ID comes from env var.
- */
+export type ReviewGrouping = "daily" | "session" | "submission";
+
+export interface SlackDestinationConfig {
+  enabled: boolean;
+  channelId?: string;
+}
+
+export interface ConfluenceDestinationConfig {
+  enabled: boolean;
+  spaceId?: string;
+  parentPageId?: string;
+}
+
+export interface ReviewDestinations {
+  slack: SlackDestinationConfig;
+  confluence: ConfluenceDestinationConfig;
+}
+
+export interface ProjectConfig {
+  id: string;
+  name: string;
+  defaultUrl?: string;
+  grouping: ReviewGrouping;
+  destinations: ReviewDestinations;
+  legacySlackThreadTs?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReviewGroupState {
+  id: string;
+  projectId: string;
+  label: string;
+  createdAt: string;
+  updatedAt: string;
+  slack?: {
+    channelId: string;
+    threadTs: string;
+    url?: string;
+  };
+  confluence?: {
+    pageId: string;
+    url?: string;
+  };
+}
+
 export interface ProjectToken {
-  t: string; // Slack thread timestamp
-  n: string; // Project name
+  t: string;
+  n: string;
 }
 
 /**
  * Project info returned to the frontend after creation.
  */
 export interface Project {
-  token: string; // base64url-encoded ProjectToken
+  id: string;
+  token?: string; // legacy base64url-encoded ProjectToken
   name: string;
-  baseUrl: string;
-  slackThreadTs: string;
+  defaultUrl?: string;
+  baseUrl?: string;
+  grouping: ReviewGrouping;
+  destinations: ReviewDestinations;
+  webhookUrl?: string;
+  latestGroup?: ReviewGroupState;
+  slackThreadTs?: string;
   createdAt: string;
+  updatedAt?: string;
 }

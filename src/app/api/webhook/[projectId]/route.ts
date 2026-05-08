@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { decodeProjectToken } from "@/lib/store";
-import {
-  postReviewToSlack,
-  uploadScreenshotToSlack,
-  generateMarkdownSummary,
-} from "@/lib/slack";
 import { annotateScreenshot } from "@/lib/annotate";
+import { publishReview } from "@/lib/publish";
+import { decodeProjectToken, getProject } from "@/lib/store";
+import { generateMarkdownSummary } from "@/lib/slack";
 import {
+  AgentationAnnotation,
+  ProjectConfig,
   ReviewSubmission,
   WebhookEvent,
-  AgentationAnnotation,
   WebhookEventType,
 } from "@/lib/types";
 
@@ -19,63 +17,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-// ---------------------------------------------------------------------------
-// Annotation deduplication
-// ---------------------------------------------------------------------------
-// NOTE: This is an in-memory, best-effort dedup. On serverless platforms like
-// Vercel each instance has its own Map, so dedup only works for concurrent
-// requests that happen to land on the same warm instance.  For guaranteed
-// exactly-once delivery, an external store (e.g. Vercel KV / Redis) would be
-// needed — but for the common case (rapid resubmission, Agentation real-time
-// events racing with ReviewCapture submit) same-instance dedup is sufficient.
-// ---------------------------------------------------------------------------
-
-const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-interface DedupEntry {
-  expiresAt: number;
-}
-
-const recentAnnotations = new Map<string, DedupEntry>();
-
-function dedupKey(threadTs: string, annotationId: string): string {
-  return `${threadTs}:${annotationId}`;
-}
-
-function isDuplicate(threadTs: string, annotationId: string): boolean {
-  const key = dedupKey(threadTs, annotationId);
-  const entry = recentAnnotations.get(key);
-  if (entry && entry.expiresAt > Date.now()) {
-    return true;
-  }
-  return false;
-}
-
-function markPosted(threadTs: string, annotationId: string): void {
-  const key = dedupKey(threadTs, annotationId);
-  recentAnnotations.set(key, { expiresAt: Date.now() + DEDUP_TTL_MS });
-}
-
-function removePosted(threadTs: string, annotationId: string): void {
-  recentAnnotations.delete(dedupKey(threadTs, annotationId));
-}
-
+const DEDUP_TTL_MS = 5 * 60 * 1000;
+const recentAnnotations = new Map<string, { expiresAt: number }>();
 let cleanupCounter = 0;
-function maybeCleanup(): void {
-  cleanupCounter++;
-  if (cleanupCounter < 100) return;
-  cleanupCounter = 0;
-  const now = Date.now();
-  recentAnnotations.forEach((entry, key) => {
-    if (entry.expiresAt <= now) {
-      recentAnnotations.delete(key);
-    }
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Validation helpers
-// ---------------------------------------------------------------------------
 
 const VALID_EVENTS: WebhookEventType[] = [
   "annotation.add",
@@ -85,37 +29,18 @@ const VALID_EVENTS: WebhookEventType[] = [
   "submit",
 ];
 
-function validateAnnotation(
-  ann: unknown,
-  index: number
-): string | null {
-  if (typeof ann !== "object" || ann === null) {
-    return `annotations[${index}]: must be an object`;
-  }
-  const a = ann as Record<string, unknown>;
-  if (typeof a.id !== "string" || !a.id) {
-    return `annotations[${index}].id: required string`;
-  }
-  if (typeof a.comment !== "string") {
-    return `annotations[${index}].comment: required string`;
-  }
-  return null;
-}
-
-// OPTIONS /api/webhook/[projectId]
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
 
-// GET /api/webhook/[projectId] - Health check
 export async function GET(
   _req: NextRequest,
   { params }: { params: { projectId: string } }
 ) {
-  const token = decodeProjectToken(params.projectId);
-  if (!token) {
+  const project = await resolveProject(params.projectId);
+  if (!project) {
     return NextResponse.json(
-      { ok: false, error: "Invalid project token" },
+      { ok: false, error: "Invalid project" },
       { status: 400, headers: corsHeaders }
     );
   }
@@ -123,26 +48,26 @@ export async function GET(
   return NextResponse.json(
     {
       ok: true,
-      project: token.n,
-      threadTs: token.t,
-      status: "ready",
+      project: project.name,
+      projectId: project.id,
+      grouping: project.grouping,
+      destinations: project.destinations,
       acceptedEvents: VALID_EVENTS,
     },
     { headers: corsHeaders }
   );
 }
 
-// POST /api/webhook/[projectId]
 export async function POST(
   req: NextRequest,
   { params }: { params: { projectId: string } }
 ) {
   maybeCleanup();
 
-  const token = decodeProjectToken(params.projectId);
-  if (!token) {
+  const project = await resolveProject(params.projectId);
+  if (!project) {
     return NextResponse.json(
-      { error: "Invalid project token" },
+      { error: "Invalid project" },
       { status: 400, headers: corsHeaders }
     );
   }
@@ -158,15 +83,181 @@ export async function POST(
   }
 
   if (isReviewSubmission(body)) {
-    return handleReviewSubmission(token.t, token.n, body);
-  } else if (isWebhookEvent(body)) {
-    return handleWebhookEvent(token.t, token.n, body);
+    return handleReviewSubmission(project, body);
+  }
+
+  if (isWebhookEvent(body)) {
+    return handleWebhookEvent(project, body);
   }
 
   return NextResponse.json(
     { error: "Unrecognized payload format" },
     { status: 400, headers: corsHeaders }
   );
+}
+
+async function handleReviewSubmission(
+  project: ProjectConfig,
+  submission: ReviewSubmission
+) {
+  const validation = validateAnnotations(submission.annotations);
+  if (validation) {
+    return NextResponse.json(
+      { error: `Validation failed: ${validation}` },
+      { status: 400, headers: corsHeaders }
+    );
+  }
+
+  const screenshotBuffer = await decodeScreenshot(
+    submission.screenshot,
+    submission.annotations,
+    submission.viewport
+  );
+  const newAnnotations = submission.annotations.filter(
+    (ann) => !isDuplicate(project.id, ann.id)
+  );
+
+  if (newAnnotations.length === 0) {
+    return NextResponse.json(
+      {
+        ok: true,
+        message: `All ${submission.annotations.length} annotations already posted (deduplicated)`,
+        skipped: submission.annotations.length,
+      },
+      { headers: corsHeaders }
+    );
+  }
+
+  newAnnotations.forEach((ann) => markPosted(project.id, ann.id));
+
+  const result = await publishReview({
+    project,
+    pageUrl: submission.url || project.defaultUrl || "Unknown page",
+    annotations: newAnnotations,
+    screenshotBuffer,
+    sessionId: submission.projectId,
+  });
+
+  rollbackFailedDedup(project.id, newAnnotations, result);
+
+  const markdown = generateMarkdownSummary(
+    project.name,
+    submission.url || project.defaultUrl || "Unknown page",
+    newAnnotations
+  );
+  const skipped = submission.annotations.length - newAnnotations.length;
+
+  return NextResponse.json(
+    {
+      ok: hasSuccessfulDestination(result),
+      message: `Processed ${newAnnotations.length} annotations${skipped > 0 ? ` (${skipped} deduplicated)` : ""}`,
+      posted: newAnnotations.length,
+      skipped,
+      group: result.group,
+      destinations: result.destinations,
+      markdown,
+    },
+    { status: hasSuccessfulDestination(result) ? 200 : 502, headers: corsHeaders }
+  );
+}
+
+async function handleWebhookEvent(project: ProjectConfig, event: WebhookEvent) {
+  if (!VALID_EVENTS.includes(event.event)) {
+    return NextResponse.json(
+      { ok: true, message: `Unknown event '${event.event}' acknowledged` },
+      { headers: corsHeaders }
+    );
+  }
+
+  if (event.event === "annotation.delete" || event.event === "annotations.clear") {
+    return NextResponse.json(
+      { ok: true, message: `${event.event} acknowledged` },
+      { headers: corsHeaders }
+    );
+  }
+
+  const annotations = event.annotations ?? (event.annotation ? [event.annotation] : []);
+  const validation = validateAnnotations(annotations);
+  if (validation) {
+    return NextResponse.json(
+      { error: `Validation failed: ${validation}` },
+      { status: 400, headers: corsHeaders }
+    );
+  }
+
+  if (annotations.length === 0) {
+    return NextResponse.json(
+      { ok: true, message: `Event ${event.event} acknowledged` },
+      { headers: corsHeaders }
+    );
+  }
+
+  const screenshotBuffer = await decodeScreenshot(event.screenshot, annotations);
+  const newAnnotations =
+    event.event === "annotation.update"
+      ? annotations
+      : annotations.filter((ann) => !isDuplicate(project.id, ann.id));
+
+  if (newAnnotations.length === 0) {
+    return NextResponse.json(
+      {
+        ok: true,
+        message: `All ${annotations.length} annotations already posted (deduplicated)`,
+        skipped: annotations.length,
+      },
+      { headers: corsHeaders }
+    );
+  }
+
+  newAnnotations.forEach((ann) => markPosted(project.id, ann.id));
+
+  const result = await publishReview({
+    project,
+    pageUrl: event.url || project.defaultUrl || "Unknown page",
+    annotations: newAnnotations,
+    screenshotBuffer,
+  });
+
+  rollbackFailedDedup(project.id, newAnnotations, result);
+
+  const skipped = annotations.length - newAnnotations.length;
+  return NextResponse.json(
+    {
+      ok: hasSuccessfulDestination(result),
+      message: `Processed ${newAnnotations.length} annotations${skipped > 0 ? ` (${skipped} deduplicated)` : ""}`,
+      posted: newAnnotations.length,
+      skipped,
+      group: result.group,
+      destinations: result.destinations,
+    },
+    { status: hasSuccessfulDestination(result) ? 200 : 502, headers: corsHeaders }
+  );
+}
+
+async function resolveProject(projectId: string): Promise<ProjectConfig | null> {
+  const project = await getProject(projectId);
+  if (project) return project;
+
+  const legacy = decodeProjectToken(projectId);
+  if (!legacy) return null;
+
+  return {
+    id: projectId,
+    name: legacy.n,
+    grouping: "daily",
+    destinations: {
+      slack: {
+        enabled: true,
+        channelId: process.env.SLACK_CHANNEL_ID,
+      },
+      confluence: {
+        enabled: false,
+      },
+    },
+    legacySlackThreadTs: legacy.t,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 function isReviewSubmission(body: unknown): body is ReviewSubmission {
@@ -188,295 +279,90 @@ function isWebhookEvent(body: unknown): body is WebhookEvent {
   );
 }
 
-async function handleReviewSubmission(
-  threadTs: string,
-  projectName: string,
-  submission: ReviewSubmission
-) {
-  for (let i = 0; i < submission.annotations.length; i++) {
-    const err = validateAnnotation(submission.annotations[i], i);
-    if (err) {
-      return NextResponse.json(
-        { error: `Validation failed: ${err}` },
-        { status: 400, headers: corsHeaders }
-      );
+function validateAnnotations(annotations: AgentationAnnotation[]): string | null {
+  for (let i = 0; i < annotations.length; i++) {
+    const ann = annotations[i] as unknown as Record<string, unknown>;
+    if (typeof ann !== "object" || ann === null) {
+      return `annotations[${i}]: must be an object`;
+    }
+    if (typeof ann.id !== "string" || !ann.id) {
+      return `annotations[${i}].id: required string`;
+    }
+    if (typeof ann.comment !== "string") {
+      return `annotations[${i}].comment: required string`;
     }
   }
-
-  // Decode screenshot BEFORE dedup check so it is available regardless of
-  // whether annotations are new or already posted.
-  let screenshotBuffer: Buffer | undefined;
-  if (submission.screenshot) {
-    try {
-      const base64Data = submission.screenshot.replace(
-        /^data:image\/\w+;base64,/,
-        ""
-      );
-      const rawBuffer = Buffer.from(base64Data, "base64");
-
-      // Overlay numbered annotation markers on the screenshot so each
-      // annotation is visually identifiable. We always annotate with ALL
-      // annotations (not just non-deduped ones) so the screenshot is a
-      // complete visual of the review.
-      screenshotBuffer = await annotateScreenshot(
-        rawBuffer,
-        submission.annotations,
-        submission.viewport
-      );
-    } catch (err) {
-      console.error("Failed to decode screenshot:", err);
-    }
-  }
-
-  const newAnnotations = submission.annotations.filter(
-    (ann) => !isDuplicate(threadTs, ann.id)
-  );
-
-  if (newAnnotations.length === 0) {
-    // All annotations already posted, but still upload the screenshot if one
-    // was provided (the typical case when Agentation fires real-time
-    // annotation.add events before ReviewCapture sends the final submission
-    // with the screenshot attached).
-    let screenshotUploaded = false;
-    if (screenshotBuffer && screenshotBuffer.length > 0) {
-      try {
-        await uploadScreenshotToSlack(
-          threadTs,
-          submission.url,
-          submission.annotations.length,
-          screenshotBuffer
-        );
-        screenshotUploaded = true;
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        console.error("[Webhook] Screenshot upload failed:", errMsg);
-      }
-    }
-
-    return NextResponse.json(
-      {
-        ok: true,
-        message: `All ${submission.annotations.length} annotations already posted (deduplicated)${
-          screenshotUploaded ? " — screenshot uploaded" : ""
-        }`,
-        skipped: submission.annotations.length,
-      },
-      { headers: corsHeaders }
-    );
-  }
-
-  // Mark annotations as posted BEFORE the async Slack call so that concurrent
-  // requests (e.g. Agentation real-time events racing with ReviewCapture
-  // submit) see the dedup entry immediately rather than after the slow
-  // network round-trip. If the Slack call fails, we remove the entries so
-  // the client can retry.
-  for (const ann of newAnnotations) {
-    markPosted(threadTs, ann.id);
-  }
-
-  try {
-    await postReviewToSlack(
-      threadTs,
-      projectName,
-      submission.url,
-      newAnnotations,
-      screenshotBuffer
-    );
-  } catch (err) {
-    for (const ann of newAnnotations) {
-      removePosted(threadTs, ann.id);
-    }
-    const errMsg = err instanceof Error ? err.message : String(err);
-    console.error("[Webhook] Slack post failed:", errMsg);
-    return NextResponse.json(
-      { ok: false, error: "Failed to post to Slack", detail: errMsg },
-      { status: 502, headers: corsHeaders }
-    );
-  }
-
-  const markdown = generateMarkdownSummary(
-    projectName,
-    submission.url,
-    newAnnotations
-  );
-
-  const skipped = submission.annotations.length - newAnnotations.length;
-  return NextResponse.json(
-    {
-      ok: true,
-      message: `Posted ${newAnnotations.length} annotations to Slack${skipped > 0 ? ` (${skipped} deduplicated)` : ""}`,
-      posted: newAnnotations.length,
-      skipped,
-      markdown,
-    },
-    { headers: corsHeaders }
-  );
+  return null;
 }
 
-async function handleWebhookEvent(
-  threadTs: string,
-  projectName: string,
-  event: WebhookEvent
-) {
-  if (!VALID_EVENTS.includes(event.event)) {
-    return NextResponse.json(
-      { ok: true, message: `Unknown event '${event.event}' acknowledged` },
-      { headers: corsHeaders }
-    );
+async function decodeScreenshot(
+  screenshot: string | undefined,
+  annotations: AgentationAnnotation[],
+  viewport?: ReviewSubmission["viewport"]
+): Promise<Buffer | undefined> {
+  if (!screenshot) return undefined;
+
+  try {
+    const base64Data = screenshot.replace(/^data:image\/\w+;base64,/, "");
+    const rawBuffer = Buffer.from(base64Data, "base64");
+    return annotateScreenshot(rawBuffer, annotations, viewport);
+  } catch (err) {
+    console.error("Failed to decode screenshot:", err);
+    return undefined;
   }
+}
 
-  // Decode screenshot if the event carries one (e.g. submit with screenshot
-  // attached by ReviewCapture or a similar client).
-  let screenshotBuffer: Buffer | undefined;
-  if (event.screenshot) {
-    try {
-      const base64Data = event.screenshot.replace(
-        /^data:image\/\w+;base64,/,
-        ""
-      );
-      const rawBuffer = Buffer.from(base64Data, "base64");
+function isDuplicate(projectId: string, annotationId: string): boolean {
+  const entry = recentAnnotations.get(dedupKey(projectId, annotationId));
+  return Boolean(entry && entry.expiresAt > Date.now());
+}
 
-      // Overlay annotation markers on the screenshot. Use all annotations
-      // when available (submit event), or the single annotation for other
-      // event types.
-      const annotationsForMarkers =
-        event.annotations ?? (event.annotation ? [event.annotation] : []);
-      screenshotBuffer = await annotateScreenshot(rawBuffer, annotationsForMarkers);
-    } catch (err) {
-      console.error("Failed to decode event screenshot:", err);
+function markPosted(projectId: string, annotationId: string): void {
+  recentAnnotations.set(dedupKey(projectId, annotationId), {
+    expiresAt: Date.now() + DEDUP_TTL_MS,
+  });
+}
+
+function removePosted(projectId: string, annotationId: string): void {
+  recentAnnotations.delete(dedupKey(projectId, annotationId));
+}
+
+function dedupKey(projectId: string, annotationId: string): string {
+  return `${projectId}:${annotationId}`;
+}
+
+function maybeCleanup(): void {
+  cleanupCounter++;
+  if (cleanupCounter < 100) return;
+  cleanupCounter = 0;
+  const now = Date.now();
+  recentAnnotations.forEach((entry, key) => {
+    if (entry.expiresAt <= now) {
+      recentAnnotations.delete(key);
     }
+  });
+}
+
+function hasSuccessfulDestination(result: {
+  destinations: {
+    slack?: { ok: boolean };
+    confluence?: { ok: boolean };
+  };
+}): boolean {
+  const destinations = Object.values(result.destinations);
+  return destinations.length === 0 || destinations.some((destination) => destination.ok);
+}
+
+function rollbackFailedDedup(
+  projectId: string,
+  annotations: AgentationAnnotation[],
+  result: {
+    destinations: {
+      slack?: { ok: boolean };
+      confluence?: { ok: boolean };
+    };
   }
-
-  if (event.event === "submit" && event.annotations) {
-    const newAnnotations = event.annotations.filter(
-      (ann: AgentationAnnotation) => !isDuplicate(threadTs, ann.id)
-    );
-
-    if (newAnnotations.length === 0) {
-      // Still upload screenshot even when annotations are deduped
-      let screenshotUploaded = false;
-      if (screenshotBuffer && screenshotBuffer.length > 0) {
-        try {
-          await uploadScreenshotToSlack(
-            threadTs,
-            event.url,
-            event.annotations.length,
-            screenshotBuffer
-          );
-          screenshotUploaded = true;
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          console.error("[Webhook] Screenshot upload failed:", errMsg);
-        }
-      }
-
-      return NextResponse.json(
-        {
-          ok: true,
-          message: `All ${event.annotations.length} annotations already posted (deduplicated)${
-            screenshotUploaded ? " — screenshot uploaded" : ""
-          }`,
-          skipped: event.annotations.length,
-        },
-        { headers: corsHeaders }
-      );
-    }
-
-    for (const ann of newAnnotations) {
-      markPosted(threadTs, ann.id);
-    }
-
-    try {
-      await postReviewToSlack(
-        threadTs,
-        projectName,
-        event.url,
-        newAnnotations,
-        screenshotBuffer
-      );
-    } catch (err) {
-      for (const ann of newAnnotations) {
-        removePosted(threadTs, ann.id);
-      }
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.error("[Webhook] Slack post failed:", errMsg);
-      return NextResponse.json(
-        { ok: false, error: "Failed to post to Slack", detail: errMsg },
-        { status: 502, headers: corsHeaders }
-      );
-    }
-
-    const skipped = event.annotations.length - newAnnotations.length;
-    return NextResponse.json(
-      {
-        ok: true,
-        message: `Posted ${newAnnotations.length} annotations to Slack${skipped > 0 ? ` (${skipped} deduplicated)` : ""}`,
-        posted: newAnnotations.length,
-        skipped,
-      },
-      { headers: corsHeaders }
-    );
-  }
-
-  if (event.annotation) {
-    const validationErr = validateAnnotation(event.annotation, 0);
-    if (validationErr) {
-      return NextResponse.json(
-        { error: `Validation failed: ${validationErr}` },
-        { status: 400, headers: corsHeaders }
-      );
-    }
-
-    if (event.event === "annotation.delete") {
-      return NextResponse.json(
-        { ok: true, message: "Annotation deleted — acknowledged" },
-        { headers: corsHeaders }
-      );
-    }
-
-    if (event.event !== "annotation.update" && isDuplicate(threadTs, event.annotation.id)) {
-      return NextResponse.json(
-        { ok: true, message: `Annotation ${event.annotation.id} already posted (deduplicated)` },
-        { headers: corsHeaders }
-      );
-    }
-
-    markPosted(threadTs, event.annotation.id);
-
-    try {
-      await postReviewToSlack(
-        threadTs,
-        projectName,
-        event.url,
-        [event.annotation],
-        screenshotBuffer
-      );
-    } catch (err) {
-      removePosted(threadTs, event.annotation.id);
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.error("[Webhook] Slack post failed:", errMsg);
-      return NextResponse.json(
-        { ok: false, error: "Failed to post to Slack", detail: errMsg },
-        { status: 502, headers: corsHeaders }
-      );
-    }
-
-    const label = event.event === "annotation.update" ? "Updated" : "New";
-    return NextResponse.json(
-      { ok: true, message: `${label} annotation posted to Slack` },
-      { headers: corsHeaders }
-    );
-  }
-
-  if (event.event === "annotations.clear") {
-    return NextResponse.json(
-      { ok: true, message: "Annotations cleared — acknowledged" },
-      { headers: corsHeaders }
-    );
-  }
-
-  return NextResponse.json(
-    { ok: true, message: `Event ${event.event} acknowledged` },
-    { headers: corsHeaders }
-  );
+): void {
+  if (hasSuccessfulDestination(result)) return;
+  annotations.forEach((ann) => removePosted(projectId, ann.id));
 }
