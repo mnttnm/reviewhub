@@ -476,15 +476,10 @@ function CreateProjectModal({
             />
           </Field>
           <Field>
-            <select
+            <GroupingControl
               value={grouping}
-              onChange={(e) => onGroupingChange(e.target.value)}
-              className="control"
-            >
-              <option value="daily">Daily thread/page</option>
-              <option value="session">Session thread/page</option>
-              <option value="submission">New thread/page per submission</option>
-            </select>
+              onChange={onGroupingChange}
+            />
           </Field>
 
           <div className="grid gap-px bg-[#353535] sm:grid-cols-2">
@@ -556,6 +551,59 @@ function Field({ children }: { children: React.ReactNode }) {
   return <div className="bg-[#0b0b0b] p-5">{children}</div>;
 }
 
+function GroupingControl({
+  onChange,
+  value,
+}: {
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const options = [
+    { label: "Daily", value: "daily", detail: "One thread/page per day" },
+    { label: "Session", value: "session", detail: "One thread/page per session" },
+    { label: "Submission", value: "submission", detail: "One thread/page per submit" },
+  ];
+
+  return (
+    <div>
+      <div className="mb-3 font-[family-name:var(--font-geist-mono)] text-[10px] uppercase tracking-[0.18em] text-[#8d887d]">
+        Grouping protocol
+      </div>
+      <div className="grid gap-px bg-[#353535] sm:grid-cols-3">
+        {options.map((option) => {
+          const selected = value === option.value;
+
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              className={
+                selected
+                  ? "bg-[#e61919] p-4 text-left text-[#0b0b0b]"
+                  : "bg-[#0b0b0b] p-4 text-left text-[#e8e4da] transition hover:bg-[#141414]"
+              }
+            >
+              <span className="block font-[family-name:var(--font-geist-mono)] text-xs font-bold uppercase tracking-[0.16em]">
+                {option.label}
+              </span>
+              <span
+                className={
+                  selected
+                    ? "mt-2 block text-xs text-[#3a0505]"
+                    : "mt-2 block text-xs text-[#8d887d]"
+                }
+              >
+                {option.detail}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function DestinationPanel({
   children,
   enabled,
@@ -575,6 +623,7 @@ function DestinationPanel({
           type="checkbox"
           checked={enabled}
           onChange={(e) => onEnabledChange(e.target.checked)}
+          className="destination-toggle"
         />
       </label>
       <div className={enabled ? "space-y-3" : "pointer-events-none space-y-3 opacity-35"}>

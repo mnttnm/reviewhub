@@ -44,6 +44,30 @@ select.control {
   color-scheme: dark;
 }
 
+.destination-toggle {
+  appearance: none;
+  width: 2.5rem;
+  height: 1.25rem;
+  border: 1px solid #525252;
+  border-radius: 0;
+  background:
+    linear-gradient(#8d887d, #8d887d) 0.25rem 50% / 0.65rem 0.65rem no-repeat,
+    #080808;
+  cursor: pointer;
+}
+
+.destination-toggle:checked {
+  border-color: #e61919;
+  background:
+    linear-gradient(#0b0b0b, #0b0b0b) calc(100% - 0.25rem) 50% / 0.65rem 0.65rem no-repeat,
+    #e61919;
+}
+
+.destination-toggle:focus-visible {
+  outline: 1px solid #e61919;
+  outline-offset: 3px;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
