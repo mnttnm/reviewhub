@@ -164,88 +164,51 @@ export async function postWebhookInfo(
   );
 }
 
-const KIND_EMOJI: Record<string, string> = {
-  feedback: "\ud83d\udcac",
-  placement: "\ud83d\udcd0",
-  rearrange: "\ud83d\udd00",
-};
-
 /**
- * Format a single annotation into a rich, readable Slack text block.
- * Designed to be useful for both humans (visual context) and AI agents (structured selectors).
+ * Format a single annotation for scanning. Keep this intentionally compact:
+ * comment, reviewed page, and enough element context to locate the issue.
  */
-function formatAnnotationLine(index: number, ann: AgentationAnnotation): string {
+function formatAnnotationLine(
+  index: number,
+  ann: AgentationAnnotation,
+  pageUrl: string
+): string {
   const severity = ann.severity
     ? SEVERITY_EMOJI[ann.severity] || ""
-    : "\u2b1c";
+    : "";
   const intent = ann.intent ? INTENT_LABEL[ann.intent] || ann.intent : "";
-  const intentStr = intent ? ` *${intent}*` : "";
-  const kindEmoji = ann.kind ? KIND_EMOJI[ann.kind] || "" : "";
-  const kindStr = kindEmoji ? ` ${kindEmoji}` : "";
+  const labels = [severity, intent].filter(Boolean).join(" ");
+  const title = labels ? `*#${index}* ${labels}` : `*#${index}*`;
 
-  const comment = ann.comment.replace(/\n/g, " ").slice(0, 300);
+  const parts: string[] = [
+    `${title}\n>${truncateForSlack(ann.comment.replace(/\n/g, "\n>"), 700)}`,
+  ];
 
-  const parts: string[] = [`*#${index}* ${severity}${intentStr}${kindStr} \u2014 \u201c${comment}\u201d`];
-
-  // What the user was looking at (human-friendly)
-  if (ann.selectedText) {
-    parts.push(`\ud83d\udcdd *Selected text:* \u201c${ann.selectedText.slice(0, 120)}\u201d`);
+  const reviewedPage = ann.url || pageUrl;
+  if (reviewedPage) {
+    parts.push(`*Page:* <${reviewedPage}|${reviewedPage}>`);
   }
   if (ann.nearbyText) {
-    parts.push(`\ud83d\udc41\ufe0f *Nearby text:* \u201c${ann.nearbyText.slice(0, 120)}\u201d`);
+    parts.push(`*Nearby:* "${truncateForSlack(ann.nearbyText, 160)}"`);
   }
-
-  // Where in the UI (for developers and agents)
   if (ann.elementPath) {
-    parts.push(`\ud83c\udfaf *Selector:* \`${ann.elementPath}\``);
+    parts.push(`*Selector:* \`${truncateForSlack(ann.elementPath, 240)}\``);
   }
   if (ann.reactComponents) {
-    parts.push(`\u269b\ufe0f *Component:* \`${ann.reactComponents}\``);
+    parts.push(`*Component:* \`${truncateForSlack(ann.reactComponents, 180)}\``);
   }
   if (ann.element) {
     const tag = ann.cssClasses
       ? `<${ann.element} class="${ann.cssClasses.slice(0, 80)}">`
       : `<${ann.element}>`;
-    parts.push(`\ud83c\udff7\ufe0f *Element:* \`${tag}\``);
-  }
-
-  // Visual properties (helps agents locate and fix)
-  if (ann.computedStyles) {
-    parts.push(`\ud83c\udfa8 *Styles:* \`${ann.computedStyles.slice(0, 150)}\``);
-  }
-  if (ann.accessibility) {
-    parts.push(`\u267f *Accessibility:* \`${ann.accessibility.slice(0, 100)}\``);
-  }
-
-  // Position info
-  const positionParts: string[] = [];
-  if (ann.x !== undefined) positionParts.push(`x: ${ann.x.toFixed(1)}%`);
-  if (ann.y !== undefined) positionParts.push(`y: ${ann.y}px`);
-  if (ann.boundingBox) {
-    const bb = ann.boundingBox;
-    positionParts.push(`box: ${bb.width}\u00d7${bb.height} at (${bb.x},${bb.y})`);
-  }
-  if (positionParts.length > 0) {
-    parts.push(`\ud83d\udccf *Position:* ${positionParts.join(" \u2022 ")}`);
-  }
-
-  // Layout mode specifics
-  if (ann.kind === "placement" && ann.placement) {
-    parts.push(`\ud83d\udcd0 *Place:* \`${ann.placement.componentType}\` (${ann.placement.width}\u00d7${ann.placement.height}px)`);
-    if (ann.placement.text) {
-      parts.push(`    Label: \u201c${ann.placement.text}\u201d`);
-    }
-  }
-  if (ann.kind === "rearrange" && ann.rearrange) {
-    parts.push(`\ud83d\udd00 *Rearrange:* \`${ann.rearrange.selector}\` (\u201c${ann.rearrange.label}\u201d)`);
-  }
-
-  // Page URL if present on annotation
-  if (ann.url) {
-    parts.push(`\ud83d\udcc4 *Page:* <${ann.url}|${ann.url}>`);
+    parts.push(`*Element:* \`${tag}\``);
   }
 
   return parts.join("\n");
+}
+
+function truncateForSlack(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
 }
 
 /**
@@ -309,7 +272,7 @@ export async function postReviewToSlack(
   if (annotations.length === 0) return;
 
   const annotationLines = annotations.map((ann, i) =>
-    formatAnnotationLine(i + 1, ann)
+    formatAnnotationLine(i + 1, ann, pageUrl)
   );
 
   const summaryBlocks = [
@@ -317,9 +280,7 @@ export async function postReviewToSlack(
       type: "section" as const,
       text: {
         type: "mrkdwn" as const,
-        text: screenshotBuffer
-          ? `*Annotations:*`
-          : `\ud83d\uddbc\ufe0f *Review submission* for <${pageUrl}|${pageUrl}>\n${annotations.length} annotation${annotations.length === 1 ? "" : "s"}\n\n*Annotations:*`,
+        text: `*Review feedback*\n*Page:* <${pageUrl}|${pageUrl}>`,
       },
     },
     {
@@ -332,15 +293,6 @@ export async function postReviewToSlack(
         text: line,
       },
     })),
-    {
-      type: "context" as const,
-      elements: [
-        {
-          type: "mrkdwn" as const,
-          text: `\ud83d\udd52 ${new Date().toISOString()} \u2022 ${annotations.length} item${annotations.length === 1 ? "" : "s"}`,
-        },
-      ],
-    },
   ];
 
   // Slack blocks limit is 50; chunk if needed

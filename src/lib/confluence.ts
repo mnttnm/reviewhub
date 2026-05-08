@@ -71,9 +71,7 @@ export async function createReviewPage(
 
   const body = [
     `<h1>${escapeHtml(title)}</h1>`,
-    `<p>Review comments captured by ReviewHub for <strong>${escapeHtml(project.name)}</strong>.</p>`,
-    `<p><strong>Status:</strong> Active</p>`,
-    `<p>Each submission below is grouped by time. Every comment has a stable annotation ID so it can be referenced from Slack, tickets, or implementation notes.</p>`,
+    `<p><small>ReviewHub feedback log. New comments are appended below in a compact, copy-friendly format.</small></p>`,
     `<hr />`,
   ].join("");
 
@@ -139,20 +137,13 @@ function renderSubmission(input: {
   slackUrl?: string;
 }): string {
   const submittedAt = new Date().toISOString();
-  const slack = input.slackUrl
-    ? `<li><strong>Slack thread:</strong> ${linkHtml(input.slackUrl)}</li>`
-    : "";
 
   return [
-    `<h2>Submission - ${submittedAt}</h2>`,
-    `<ul>`,
-    `<li><strong>Project:</strong> ${escapeHtml(input.projectName)}</li>`,
-    `<li><strong>Reviewed page:</strong> ${linkHtml(input.pageUrl)}</li>`,
-    `<li><strong>Comments:</strong> ${input.annotations.length}</li>`,
-    slack,
-    `</ul>`,
+    `<p><small><strong>${submittedAt}</strong> | Page: ${linkHtml(input.pageUrl)}${input.slackUrl ? ` | Slack: ${linkHtml(input.slackUrl)}` : ""}</small></p>`,
     input.annotations
-      .map((ann, index) => renderAnnotation(index + 1, ann, input.pageUrl))
+      .map((ann, index) =>
+        renderAnnotation(index + 1, ann, input.pageUrl, input.slackUrl)
+      )
       .join(""),
     `<hr />`,
   ].join("");
@@ -161,107 +152,34 @@ function renderSubmission(input: {
 function renderAnnotation(
   index: number,
   ann: AgentationAnnotation,
-  fallbackPageUrl: string
+  fallbackPageUrl: string,
+  slackUrl?: string
 ): string {
-  const titleParts = [
-    `#${index}`,
-    ann.severity ? ann.severity : "unprioritized",
-    ann.intent ? ann.intent : "feedback",
-    ann.kind && ann.kind !== "feedback" ? ann.kind : "",
+  const labels = [ann.severity, ann.intent].filter(Boolean).join(" / ");
+  const title = labels ? `#${index} - ${labels}` : `#${index}`;
+  const element = formatElement(ann);
+  const lines = [
+    `${title}`,
+    `comment: ${ann.comment}`,
+    `page: ${ann.url || fallbackPageUrl}`,
+    slackUrl ? `slack: ${slackUrl}` : "",
+    ann.nearbyText ? `nearby: ${ann.nearbyText}` : "",
+    ann.elementPath ? `selector: ${ann.elementPath}` : "",
+    ann.reactComponents ? `component: ${ann.reactComponents}` : "",
+    element ? `element: ${element}` : "",
   ].filter(Boolean);
 
-  const details = [
-    `<li><strong>Annotation ID:</strong> <code>${escapeHtml(ann.id)}</code></li>`,
-    `<li><strong>Status:</strong> ${escapeHtml(ann.status || "pending")}</li>`,
-    `<li><strong>Created:</strong> ${new Date(ann.timestamp || Date.now()).toISOString()}</li>`,
-    `<li><strong>Page:</strong> ${linkHtml(ann.url || fallbackPageUrl)}</li>`,
-  ];
+  return `<pre><code>${escapeHtml(lines.join("\n"))}</code></pre>`;
+}
 
-  if (ann.selectedText) {
-    details.push(
-      `<li><strong>Selected text:</strong> ${quoteHtml(ann.selectedText)}</li>`
-    );
-  }
-  if (ann.nearbyText) {
-    details.push(
-      `<li><strong>Nearby text:</strong> ${quoteHtml(ann.nearbyText)}</li>`
-    );
-  }
-  if (ann.elementPath) {
-    details.push(
-      `<li><strong>Selector:</strong> <code>${escapeHtml(ann.elementPath)}</code></li>`
-    );
-  }
-  if (ann.reactComponents) {
-    details.push(
-      `<li><strong>Component:</strong> <code>${escapeHtml(ann.reactComponents)}</code></li>`
-    );
-  }
+function formatElement(ann: AgentationAnnotation): string {
   if (ann.element) {
-    const element = ann.cssClasses
+    return ann.cssClasses
       ? `<${ann.element} class="${ann.cssClasses.slice(0, 120)}">`
       : `<${ann.element}>`;
-    details.push(
-      `<li><strong>Element:</strong> <code>${escapeHtml(element)}</code></li>`
-    );
-  }
-  if (ann.accessibility) {
-    details.push(
-      `<li><strong>Accessibility:</strong> <code>${escapeHtml(ann.accessibility.slice(0, 200))}</code></li>`
-    );
-  }
-  if (ann.computedStyles) {
-    details.push(
-      `<li><strong>Styles:</strong> <code>${escapeHtml(ann.computedStyles.slice(0, 260))}</code></li>`
-    );
-  }
-  if (ann.x !== undefined || ann.y !== undefined || ann.boundingBox) {
-    details.push(`<li><strong>Position:</strong> ${escapeHtml(formatPosition(ann))}</li>`);
-  }
-  if (ann.kind === "placement" && ann.placement) {
-    details.push(
-      `<li><strong>Placement:</strong> <code>${escapeHtml(ann.placement.componentType)}</code> (${ann.placement.width}x${ann.placement.height}px)${ann.placement.text ? ` - ${quoteHtml(ann.placement.text)}` : ""}</li>`
-    );
-  }
-  if (ann.kind === "rearrange" && ann.rearrange) {
-    details.push(
-      `<li><strong>Rearrange:</strong> <code>${escapeHtml(ann.rearrange.selector)}</code> - ${quoteHtml(ann.rearrange.label)}</li>`
-    );
   }
 
-  return [
-    `<h3>${escapeHtml(titleParts.join(" - "))}</h3>`,
-    `<blockquote>${paragraphize(ann.comment)}</blockquote>`,
-    `<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">Details for ${escapeHtml(ann.id)}</ac:parameter><ac:rich-text-body>`,
-    `<ul>${details.join("")}</ul>`,
-    `</ac:rich-text-body></ac:structured-macro>`,
-  ].join("");
-}
-
-function formatPosition(ann: AgentationAnnotation): string {
-  const parts: string[] = [];
-  if (ann.x !== undefined) parts.push(`x: ${ann.x.toFixed(1)}%`);
-  if (ann.y !== undefined) parts.push(`y: ${ann.y}px`);
-  if (ann.boundingBox) {
-    parts.push(
-      `box: ${ann.boundingBox.width}x${ann.boundingBox.height} at (${ann.boundingBox.x}, ${ann.boundingBox.y})`
-    );
-  }
-  return parts.join(" | ");
-}
-
-function paragraphize(value: string): string {
-  const paragraphs = value
-    .split(/\n{2,}/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  if (paragraphs.length === 0) return "<p></p>";
-  return paragraphs.map((part) => `<p>${escapeHtml(part)}</p>`).join("");
-}
-
-function quoteHtml(value: string): string {
-  return `&ldquo;${escapeHtml(value)}&rdquo;`;
+  return "";
 }
 
 function getPageUrl(page: ConfluencePage): string | undefined {
