@@ -5,17 +5,32 @@ import {
   listProjects,
   saveProject,
 } from "@/lib/store";
+import { normalizeConfluencePageUrl } from "@/lib/confluence";
 import { ProjectConfig, ReviewDestinations, ReviewGrouping } from "@/lib/types";
 
 export async function GET(req: NextRequest) {
   const origin = getOrigin(req);
   const projects = await listProjects();
   const withLinks = await Promise.all(
-    projects.map(async (project) => ({
-      ...project,
-      webhookUrl: `${origin}/api/webhook/${project.id}`,
-      latestGroup: await getLatestReviewGroup(project.id),
-    }))
+    projects.map(async (project) => {
+      const latestGroup = await getLatestReviewGroup(project.id);
+
+      return {
+        ...project,
+        webhookUrl: `${origin}/api/webhook/${project.id}`,
+        latestGroup: latestGroup
+          ? {
+              ...latestGroup,
+              confluence: latestGroup.confluence
+                ? {
+                    ...latestGroup.confluence,
+                    url: normalizeConfluencePageUrl(latestGroup.confluence.url),
+                  }
+                : undefined,
+            }
+          : latestGroup,
+      };
+    })
   );
 
   return NextResponse.json({ projects: withLinks });

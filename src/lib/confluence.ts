@@ -195,10 +195,29 @@ function paragraphize(value: string): string {
   return paragraphs.map((part) => `<p>${escapeHtml(part)}</p>`).join("");
 }
 
+export function normalizeConfluencePageUrl(url?: string): string | undefined {
+  if (!url) return undefined;
+
+  try {
+    const parsed = new URL(url);
+    if (
+      parsed.hostname.endsWith(".atlassian.net") &&
+      parsed.pathname.startsWith("/spaces/")
+    ) {
+      parsed.pathname = `/wiki${parsed.pathname}`;
+      return parsed.toString();
+    }
+  } catch {
+    return url;
+  }
+
+  return url;
+}
+
 function getPageUrl(page: ConfluencePage): string | undefined {
   const baseUrl = process.env.CONFLUENCE_BASE_URL?.replace(/\/$/, "");
   const webui = page._links?.webui;
-  return baseUrl && webui ? `${baseUrl}${webui}` : undefined;
+  return normalizeConfluencePageUrl(baseUrl && webui ? `${baseUrl}${webui}` : undefined);
 }
 
 function linkHtml(url: string): string {
