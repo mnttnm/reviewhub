@@ -195,7 +195,11 @@ async function handleWebhookEvent(project: ProjectConfig, event: WebhookEvent) {
     );
   }
 
-  const screenshotBuffer = await decodeScreenshot(event.screenshot, annotations);
+  const screenshotBuffer = await decodeScreenshot(
+    event.screenshot,
+    annotations,
+    event.viewport
+  );
   const newAnnotations =
     event.event === "annotation.update"
       ? annotations

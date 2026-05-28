@@ -52,6 +52,13 @@ interface AgentationAnnotation {
   status?: string;
 }
 
+interface ViewportInfo {
+  width: number;
+  height: number;
+  devicePixelRatio: number;
+  scrollY: number;
+}
+
 interface ReviewCaptureProps {
   webhookUrl: string;
 }
@@ -62,6 +69,15 @@ export interface ReviewCaptureHandle {
     annotation: AgentationAnnotation,
     eventType?: "annotation.add" | "annotation.update"
   ) => Promise<void>;
+}
+
+function getViewportInfo(): ViewportInfo {
+  return {
+    width: window.innerWidth,
+    height: window.innerHeight,
+    devicePixelRatio: window.devicePixelRatio,
+    scrollY: window.scrollY,
+  };
 }
 
 /**
@@ -89,6 +105,9 @@ async function captureScreenshot(): Promise<string | null> {
       const canvas = await domToCanvas(document.documentElement, {
         backgroundColor: "#ffffff",
         timeout: 10000,
+        features: {
+          restoreScrollPosition: true,
+        },
       });
 
       // Compress as JPEG for smaller payload (typically 3-5x smaller than PNG)
@@ -117,12 +136,7 @@ const ReviewCapture = forwardRef<ReviewCaptureHandle, ReviewCaptureProps>(
           url: window.location.href,
           annotations,
           screenshot,
-          viewport: {
-            width: window.innerWidth,
-            height: window.innerHeight,
-            devicePixelRatio: window.devicePixelRatio,
-            scrollY: window.scrollY,
-          },
+          viewport: getViewportInfo(),
         };
 
         try {
@@ -155,6 +169,7 @@ const ReviewCapture = forwardRef<ReviewCaptureHandle, ReviewCaptureProps>(
           url: window.location.href,
           annotation,
           screenshot,
+          viewport: getViewportInfo(),
         };
 
         try {

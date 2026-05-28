@@ -91,7 +91,8 @@ export async function annotateScreenshot(
       if (ann.boundingBox) {
         const bb = ann.boundingBox;
         const bx = bb.x * scale;
-        const by = bb.y * scale;
+        const by =
+          ann.isFixed && scrollY > 0 ? (bb.y + scrollY) * scale : bb.y * scale;
         const bw = bb.width * scale;
         const bh = bb.height * scale;
 

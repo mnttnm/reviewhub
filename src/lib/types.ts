@@ -60,6 +60,13 @@ export interface AgentationAnnotation {
   thread?: ThreadMessage[];
 }
 
+export interface ViewportInfo {
+  width: number;
+  height: number;
+  devicePixelRatio: number;
+  scrollY: number;
+}
+
 export interface ThreadMessage {
   id: string;
   role: "human" | "agent";
@@ -84,6 +91,7 @@ export interface WebhookEvent {
   annotation?: AgentationAnnotation;
   annotations?: AgentationAnnotation[];
   screenshot?: string; // base64 data URL (attached by ReviewCapture)
+  viewport?: ViewportInfo;
 }
 
 /**
@@ -95,12 +103,7 @@ export interface ReviewSubmission {
   url: string;
   annotations: AgentationAnnotation[];
   screenshot?: string; // base64 data URL
-  viewport?: {
-    width: number;
-    height: number;
-    devicePixelRatio: number;
-    scrollY: number;
-  };
+  viewport?: ViewportInfo;
 }
 
 export type ReviewGrouping = "daily" | "session" | "submission";
